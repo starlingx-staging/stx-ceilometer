@@ -389,17 +389,13 @@ above table is the following:
 
 .. note::
 
-    To enable the libvirt ``memory.usage`` support, you need to install
-    libvirt version 1.1.1+, QEMU version 1.5+, and you also need to
-    prepare suitable balloon driver in the image. It is applicable
-    particularly for Windows guests, most modern Linux distributions
-    already have it built in. Telemetry is not able to fetch the
-    ``memory.usage`` samples without the image balloon driver.
+    If storing data in Gnocchi, derived rate_of_change metrics are also
+    computed using Gnocchi in addition to Ceilometer transformers. It avoids
+    missing data when Ceilometer services restart.
+    To minimize Ceilometer memory requirements transformers can be disabled.
+    These ``rate_of_change`` meters are deprecated and will be removed in
+    default Ceilometer configuration in future release.
 
-.. note::
-
-    To enable libvirt ``disk.*`` support when running on RBD-backed shared
-    storage, you need to install libvirt version 1.2.16+.
 
 OpenStack Compute is capable of collecting ``CPU`` related meters from
 the compute host machines. In order to use that you need to set the

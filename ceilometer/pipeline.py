@@ -438,7 +438,9 @@ class Sink(object):
                     "No transformer named %s loaded" % transformer['name'],
                     cfg)
             transformers.append(ext.plugin(**parameter))
-            LOG.info(
+            # Downgrade high frequency non-essential logs to debug
+            # to reduce I/O
+            LOG.debug(
                 "Pipeline %(pipeline)s: Setup transformer instance %(name)s "
                 "with parameter %(param)s" % ({'pipeline': self,
                                                'name': transformer['name'],
@@ -781,7 +783,9 @@ class PipelineManager(ConfigManagerBase):
         if not ('sources' in cfg and 'sinks' in cfg):
             raise PipelineException("Both sources & sinks are required",
                                     cfg)
-        LOG.info('detected decoupled pipeline config format')
+        # Downgrade high frequency non-essential logs to debug
+        # to reduce I/O
+        LOG.debug('detected decoupled pipeline config format')
         publisher_manager = PublisherManager(self.conf, p_type['name'])
 
         unique_names = set()

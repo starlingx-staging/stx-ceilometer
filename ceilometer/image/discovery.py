@@ -24,6 +24,17 @@ SERVICE_OPTS = [
 ]
 
 
+def _get_region_name(conf, service_type):
+    reg = conf.region_name_for_services
+    # If Shared Services configured, override region for image/volumes
+    shared_services_region_name = conf.region_name_for_shared_services
+    shared_services_types = conf.shared_services_types
+    if shared_services_region_name:
+        if service_type in shared_services_types:
+            reg = shared_services_region_name
+    return reg
+
+
 class ImagesDiscovery(plugin_base.DiscoveryBase):
     def __init__(self, conf):
         super(ImagesDiscovery, self).__init__(conf)
@@ -31,7 +42,7 @@ class ImagesDiscovery(plugin_base.DiscoveryBase):
         self.glance_client = glanceclient.Client(
             version='2',
             session=keystone_client.get_session(conf),
-            region_name=creds.region_name,
+            region_name=_get_region_name(conf, conf.service_types.glance),
             interface=creds.interface,
             service_type=conf.service_types.glance)
 

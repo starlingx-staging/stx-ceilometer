@@ -10,6 +10,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2013-2016 Wind River Systems, Inc.
+#
 
 """SQLAlchemy storage backend."""
 
@@ -18,6 +21,7 @@ import datetime
 import hashlib
 import os
 
+from collections import namedtuple
 from oslo_db import api
 from oslo_db import exception as dbexc
 from oslo_db.sqlalchemy import session as db_session
@@ -30,7 +34,7 @@ from sqlalchemy import and_
 from sqlalchemy import distinct
 from sqlalchemy import func
 from sqlalchemy.orm import aliased
-from sqlalchemy.sql.expression import cast
+from sqlalchemy.sql import text
 
 import ceilometer
 from ceilometer.i18n import _
@@ -137,7 +141,8 @@ def make_query_from_filter(session, query, sample_filter, require_meter=True):
     """
 
     if sample_filter.meter:
-        query = query.filter(models.Meter.name == sample_filter.meter)
+        # meter filter is on caller level with a in clause
+        pass
     elif require_meter:
         raise RuntimeError('Missing required meter specifier')
     if sample_filter.source:
@@ -176,6 +181,188 @@ def make_query_from_filter(session, query, sample_filter, require_meter=True):
                                        sample_filter.metaquery)
 
     return query
+
+
+def apply_multiple_metaquery_filter(query, metaquery):
+    """This is to support multiple metadata filter
+
+    The result of this is to add a sub clause in where
+    ... and sample.resource_id in (
+        select id from metadata_xxx where <meta filter 1>
+         union select id from metadata_xxx where <meta filter 2>
+         union ...)
+    """
+
+    if len(metaquery) <= 1:
+        return apply_metaquery_filter_to_query(query, metaquery)
+
+    quires = []
+    i = 0
+    for k, value in six.iteritems(metaquery):
+        key = k[9:]  # strip out 'metadata.' prefix
+        try:
+            _model = sql_utils.META_TYPE_MAP[type(value)]
+        except KeyError:
+            raise ceilometer.NotImplementedError(
+                'Query on %(key)s is of %(value)s '
+                'type and is not supported' %
+                {"key": k, "value": type(value)})
+        else:
+            table_name = _model.__tablename__
+
+            i += 1
+            key_parm = 'key_%s' % i
+            value_parm = 'value_%s' % i
+            sql = "select id from %s where meta_key = :%s and value = :%s" % (
+                table_name, key_parm, value_parm
+            )
+            quires.append(sql)
+            query.args[key_parm] = key
+            query.args[value_parm] = value
+
+    union_clause = ' union '.join(quires)
+    query.wheres.append('sample.resource_id in (%s)' % union_clause)
+
+    return query
+
+
+def apply_metaquery_filter_to_query(query, metaquery):
+    """Apply provided metaquery filter to existing query.
+
+    :param query: SimpleQueryGenerator instance
+    :param metaquery: dict with metadata to match on.
+    """
+
+    if len(metaquery) > 1:
+        return apply_multiple_metaquery_filter(query, metaquery)
+
+    join_list = []
+    i = 0
+    for k, value in six.iteritems(metaquery):
+        key = k[9:]  # strip out 'metadata.' prefix
+        try:
+            _model = sql_utils.META_TYPE_MAP[type(value)]
+        except KeyError:
+            raise ceilometer.NotImplementedError(
+                'Query on %(key)s is of %(value)s '
+                'type and is not supported' %
+                {"key": k, "value": type(value)})
+        else:
+            table_name = _model.__tablename__
+            if table_name not in join_list:
+                join_list.append(table_name)
+
+            i += 1
+            meta_key_param = 'meta_key_{0}'.format(i)
+            meta_value_param = 'meta_value_{0}'.format(i)
+            join_clause = \
+                'join {0} on {0}.id = sample.resource_id ' \
+                'and {0}.meta_key = :{1} ' \
+                'and {0}.value = :{2}'.format(
+                    table_name, meta_key_param, meta_value_param
+                )
+            query.joins.append(join_clause)
+            query.args[meta_key_param] = key
+            query.args[meta_value_param] = value
+    return query
+
+
+def add_stats_filter_to_query(query, sample_filter):
+    """Update the query with addition filters
+
+    :param query: Query object
+    :param sample_filter: SampleFilter instance
+    Note that meter_name, start_time and end_time has already applied
+    """
+
+    if sample_filter.source:
+        query.wheres.append('resource.source_id = :source_id')
+        query.args['source_id'] = sample_filter.source
+    if sample_filter.user:
+        if sample_filter.user == 'None':
+            query.wheres.append('resource.user_id is null')
+        else:
+            query.wheres.append('resource.user_id = :user_id')
+            query.args['user_id'] = sample_filter.user
+    if sample_filter.project:
+        if sample_filter.project == 'None':
+            query.wheres.append('resource.project_id is null')
+        else:
+            query.wheres.append('resource.project_id = :project_id')
+            query.args['project_id'] = sample_filter.project
+    if sample_filter.resource:
+        query.wheres.append('resource.resource_id = :resource_id')
+        query.args['resource_id'] = sample_filter.resource
+    if sample_filter.message_id:
+        query.wheres.append('sample.message_id = :message_id')
+        query.args['message_id'] = sample_filter.message_id
+    if sample_filter.metaquery:
+        query = apply_metaquery_filter_to_query(
+            query,
+            sample_filter.metaquery
+        )
+
+    return query
+
+
+def apply_filter_to_meter_query(query, sample_filter):
+    """Update the query with additional filters
+
+    :param query: Query object
+    :param sample_filter: SampleFilter instance
+    Metadata is not applicable to meter queries
+    """
+
+    if sample_filter.user:
+        query = query.filter(
+            models.Resource.user_id == sample_filter.user)
+    if sample_filter.project:
+        query = query.filter(
+            models.Resource.project_id == sample_filter.project)
+    if sample_filter.source:
+        query = query.filter(
+            models.Resource.source_id == sample_filter.source)
+    if sample_filter.resource:
+        query = query.filter(
+            models.Resource.resource_id == sample_filter.resource)
+
+    return query
+
+
+# sqlalchemy isn't flexible enough to handle handwrite complex column
+# in query. This query generator class help to solve the problem.
+# limitation: where clause is 'and' relation
+class SimpleQueryGenerator(object):
+    def __init__(self):
+        self.columns = []
+        self.froms = []
+        self.joins = []
+        self.wheres = []
+        self.groups = []
+        self.orders = []
+        self.args = {}
+
+    def __str__(self):
+        res = 'select '
+        res = res + ', '.join(self.columns) + '\n'
+        res = res + 'FROM ' + ', '.join(self.froms) + '\n'
+
+        if len(self.joins) > 0:
+            res = res + '\n '.join(self.joins) + '\n'
+
+        if len(self.wheres) > 0:
+            res = res + 'where ' + ' and '.join(self.wheres) + '\n'
+
+        if len(self.groups) > 0:
+            res = res + 'group by ' + ', '.join(self.groups) + '\n'
+
+        if len(self.orders) > 0:
+            res = res + 'order by ' + ', '.join(self.orders) + '\n'
+
+        return res
+
+    def get_sql(self):
+        return self.__str__()
 
 
 class Connection(base.Connection):
@@ -239,18 +426,19 @@ class Connection(base.Connection):
                             'sqlalchemy', 'migrate_repo')
         engine = self._engine_facade.get_engine()
 
-        from migrate import exceptions as migrate_exc
-        from migrate.versioning import api
-        from migrate.versioning import repository
+        # from migrate import exceptions as migrate_exc
+        # from migrate.versioning import api
+        # from migrate.versioning import repository
 
-        repo = repository.Repository(path)
-        try:
-            api.db_version(engine, repo)
-        except migrate_exc.DatabaseNotControlledError:
-            models.Base.metadata.create_all(engine)
-            api.version_control(engine, repo, repo.latest)
-        else:
-            migration.db_sync(engine, path)
+        # repo = repository.Repository(path)
+        # try:
+        #     api.db_version(engine, repo)
+        # except migrate_exc.DatabaseNotControlledError:
+        #     models.Base.metadata.create_all(engine)
+        #     api.version_control(engine, repo, repo.latest)
+        # else:
+        #     migration.db_sync(engine, path)
+        migration.db_sync(engine, path)
 
     def clear(self):
         engine = self._engine_facade.get_engine()
@@ -338,6 +526,26 @@ class Connection(base.Connection):
 
         return internal_id
 
+    @staticmethod
+    def _create_resource_meta(conn, res_id, rmeta):
+        if rmeta and isinstance(rmeta, dict):
+            meta_map = {}
+            for key, v in utils.dict_to_keyval(rmeta):
+                try:
+                    _model = sql_utils.META_TYPE_MAP[type(v)]
+                    if meta_map.get(_model) is None:
+                        meta_map[_model] = []
+                    meta_map[_model].append(
+                        {'id': res_id, 'meta_key': key,
+                         'value': v})
+                except KeyError:
+                    LOG.warning(_("Unknown metadata type. Key "
+                                  "(%s) will not be queryable."),
+                                key)
+            for _model in meta_map.keys():
+                conn.execute(_model.__table__.insert(),
+                             meta_map[_model])
+
     # FIXME(sileht): use set_defaults to pass cfg.CONF.database.retry_interval
     # and cfg.CONF.database.max_retries to this method when global config
     # have been removed (puting directly cfg.CONF don't work because and copy
@@ -351,25 +559,50 @@ class Connection(base.Connection):
                      ceilometer.publisher.utils.meter_message_from_counter
         """
         engine = self._engine_facade.get_engine()
-        with engine.begin() as conn:
-            # Record the raw data for the sample.
-            m_id = self._create_meter(conn,
-                                      data['counter_name'],
-                                      data['counter_type'],
-                                      data['counter_unit'])
-            res_id = self._create_resource(conn,
-                                           data['resource_id'],
-                                           data['user_id'],
-                                           data['project_id'],
-                                           data['source'],
-                                           data['resource_metadata'])
-            sample = models.Sample.__table__
-            conn.execute(sample.insert(), meter_id=m_id,
-                         resource_id=res_id,
-                         timestamp=data['timestamp'],
-                         volume=data['counter_volume'],
-                         message_signature=data['message_signature'],
-                         message_id=data['message_id'])
+        metadata = jsonutils.dumps(
+            data['resource_metadata'],
+            sort_keys=True
+        )
+
+        m_hash = hashlib.md5(metadata).hexdigest()
+
+        conn = engine.raw_connection()
+        try:
+            cursor = conn.cursor()
+            params = [
+                float(data['counter_volume']),
+                data['counter_name'],
+                data['counter_type'],
+                data['counter_unit'],
+                data['resource_id'],
+                data['user_id'],
+                data['project_id'],
+                data['source'],
+                m_hash,
+                metadata,
+                str(data['timestamp']),
+                data['message_signature'],
+                data['message_id']
+            ]
+            cursor.callproc("create_sample", params)
+            result = cursor.fetchone()
+            # result is tuple of
+            # (sample_id, resource_id, meter_id, is_new_resource, is_new_meter)
+            # limited by sqlalchemy, the column names are not accessible.
+            cursor.close()
+            new_resource_id = result[1]
+            is_new_resource = result[3]
+            conn.commit()
+
+            if is_new_resource and data['resource_metadata']:
+                with engine.begin() as conn2:
+                    self._create_resource_meta(
+                        conn2,
+                        new_resource_id,
+                        data['resource_metadata']
+                    )
+        finally:
+            conn.close()
 
     def clear_expired_metering_data(self, ttl):
         """Clear expired data from the backend storage system.
@@ -387,6 +620,17 @@ class Connection(base.Connection):
             rows = sample_q.delete()
             LOG.info("%d samples removed from database", rows)
 
+        engine = self._engine_facade.get_engine()
+        with engine.connect() as conn:
+            result = conn.execute(text('SELECT last_value FROM meter_id_seq;'))
+            first_row = result.first()
+            if first_row is not None and \
+               first_row['last_value'] > 7378697629483820646:
+                stmt = text('ALTER SEQUENCE meter_id_seq RESTART WITH 1;')
+                conn.execute(stmt)
+                LOG.info("restart sample id sequence, last value was %d",
+                         first_row['last_value'])
+
         if not self.conf.database.sql_expire_samples_only:
             with session.begin():
                 # remove Meter definitions with no matching samples
@@ -394,32 +638,21 @@ class Connection(base.Connection):
                  .filter(~models.Meter.samples.any())
                  .delete(synchronize_session=False))
 
-            with session.begin():
-                resource_q = (session.query(models.Resource.internal_id)
-                              .filter(~models.Resource.samples.any()))
-                # mark resource with no matching samples for delete
-                resource_q.update({models.Resource.metadata_hash: "delete_"
-                                  + cast(models.Resource.internal_id,
-                                         sa.String)},
-                                  synchronize_session=False)
-
-            # remove metadata of resources marked for delete
+            # remove metadata of resources with no matching samples
             for table in [models.MetaText, models.MetaBigInt,
                           models.MetaFloat, models.MetaBool]:
                 with session.begin():
                     resource_q = (session.query(models.Resource.internal_id)
-                                  .filter(models.Resource.metadata_hash
-                                          .like('delete_%')))
+                                  .filter(~models.Resource.samples.any()))
                     resource_subq = resource_q.subquery()
                     (session.query(table)
                      .filter(table.id.in_(resource_subq))
                      .delete(synchronize_session=False))
 
-            # remove resource marked for delete
+            # remove resource with no matching samples
             with session.begin():
                 resource_q = (session.query(models.Resource.internal_id)
-                              .filter(models.Resource.metadata_hash
-                                      .like('delete_%')))
+                              .filter(~models.Resource.samples.any()))
                 resource_q.delete(synchronize_session=False)
             LOG.info("Expired residual resource and"
                      " meter definition data")
@@ -469,37 +702,50 @@ class Connection(base.Connection):
                                        require_meter=False)
         res_q = res_q.limit(limit) if limit else res_q
         for res_id in res_q.all():
+            if has_timestamp:
+                # get max and min sample timestamp value
+                min_max_q = (session.query(func.max(models.Sample.timestamp)
+                                           .label('max_timestamp'),
+                                           func.min(models.Sample.timestamp)
+                                           .label('min_timestamp'))
+                             .join(models.Resource,
+                                   models.Resource.internal_id ==
+                                   models.Sample.resource_id)
+                             .filter(models.Resource.resource_id ==
+                                     res_id[0]))
 
-            # get max and min sample timestamp value
-            min_max_q = (session.query(func.max(models.Sample.timestamp)
-                                       .label('max_timestamp'),
-                                       func.min(models.Sample.timestamp)
-                                       .label('min_timestamp'))
-                                .join(models.Resource,
-                                      models.Resource.internal_id ==
-                                      models.Sample.resource_id)
-                                .filter(models.Resource.resource_id ==
-                                        res_id[0]))
+                min_max_q = make_query_from_filter(session, min_max_q,
+                                                   s_filter,
+                                                   require_meter=False)
+                min_max = min_max_q.first()
 
-            min_max_q = make_query_from_filter(session, min_max_q, s_filter,
-                                               require_meter=False)
-
-            min_max = min_max_q.first()
-
-            # get resource details for latest sample
-            res_q = (session.query(models.Resource.resource_id,
-                                   models.Resource.user_id,
-                                   models.Resource.project_id,
-                                   models.Resource.source_id,
-                                   models.Resource.resource_metadata)
-                            .join(models.Sample,
-                                  models.Sample.resource_id ==
-                                  models.Resource.internal_id)
-                            .filter(models.Sample.timestamp ==
-                                    min_max.max_timestamp)
-                            .filter(models.Resource.resource_id ==
-                                    res_id[0])
-                            .order_by(models.Sample.id.desc()).limit(1))
+                # get resource details for latest sample
+                res_q = (session.query(models.Resource.resource_id,
+                                       models.Resource.user_id,
+                                       models.Resource.project_id,
+                                       models.Resource.source_id,
+                                       models.Resource.resource_metadata)
+                         .join(models.Sample,
+                               models.Sample.resource_id ==
+                               models.Resource.internal_id)
+                         .filter(models.Sample.timestamp ==
+                                 min_max.max_timestamp)
+                         .filter(models.Resource.resource_id ==
+                                 res_id[0])
+                         .order_by(models.Sample.id.desc()).limit(1))
+            else:
+                # If the client does not specify the timestamps, use
+                # a much leaner query to retrieve resource info
+                min_max_ts = namedtuple('min_max_ts', ['min_timestamp',
+                                                       'max_timestamp'])
+                min_max = min_max_ts(None, None)
+                res_q = (session.query(models.Resource.resource_id,
+                                       models.Resource.user_id,
+                                       models.Resource.project_id,
+                                       models.Resource.source_id,
+                                       models.Resource.resource_metadata)
+                         .filter(models.Resource.resource_id == res_id[0])
+                         .limit(1))
 
             res = res_q.first()
 
@@ -514,7 +760,7 @@ class Connection(base.Connection):
             )
 
     def get_meters(self, user=None, project=None, resource=None, source=None,
-                   metaquery=None, limit=None, unique=False):
+                   meter=None, metaquery=None, limit=None, unique=False):
         """Return an iterable of api_models.Meter instances
 
         :param user: Optional ID for user that owns the resource.
@@ -529,42 +775,87 @@ class Connection(base.Connection):
             return
         s_filter = storage.SampleFilter(user=user,
                                         project=project,
+                                        meter=meter,
                                         source=source,
                                         metaquery=metaquery,
                                         resource=resource)
 
-        # NOTE(gordc): get latest sample of each meter/resource. we do not
-        #              filter here as we want to filter only on latest record.
         session = self._engine_facade.get_session()
 
-        subq = session.query(func.max(models.Sample.id).label('id')).join(
-            models.Resource,
-            models.Resource.internal_id == models.Sample.resource_id)
+        if s_filter.meter:
+            # If a specific meter is provided which is the case for
+            # meter based stats report, use a faster query
+            subq = session.query(models.Sample.meter_id.label('m_id'),
+                                 models.Sample.resource_id.label('res_id'),
+                                 models.Meter.name.label('m_name'),
+                                 models.Meter.type.label('m_type'),
+                                 models.Meter.unit.label('m_unit')).join(
+                models.Meter, models.Meter.id == models.Sample.meter_id)
+            subq = subq.filter(models.Meter.name == meter)
+            subq = subq.subquery()
+            query_sample = (session.query(
+                func.max(subq.c.m_id).label('id'),
+                func.max(subq.c.m_name).label('name'),
+                func.max(subq.c.m_type).label('type'),
+                func.max(subq.c.m_unit).label('unit'),
+                models.Resource.resource_id.label('resource_id'),
+                func.max(models.Resource.project_id).label('project_id'),
+                func.max(models.Resource.source_id).label('source_id'),
+                func.max(models.Resource.user_id).label('user_id'))
+                .join(models.Resource, models.Resource.internal_id ==
+                      subq.c.res_id))
 
-        if unique:
-            subq = subq.group_by(models.Sample.meter_id)
+            # Apply additional filters as required. This specific function
+            # skips meter filter, which has been applied in the sub-query,
+            # as well as metadata filter. Metadata does not apply to meter
+            # related queries.
+            query_sample = apply_filter_to_meter_query(query_sample, s_filter)
+
+            query_sample = query_sample.group_by(models.Resource.resource_id)
         else:
-            subq = subq.group_by(models.Sample.meter_id,
-                                 models.Resource.resource_id)
+            # NOTE(gordc): get latest sample of each meter/resource. we do not
+            #          filter here as we want to filter only on latest record.
 
-        if resource:
-            subq = subq.filter(models.Resource.resource_id == resource)
-        subq = subq.subquery()
+            subq = session.query(func.max(models.Sample.id).label('id')).join(
+                models.Resource,
+                models.Resource.internal_id == models.Sample.resource_id)
 
-        # get meter details for samples.
-        query_sample = (session.query(models.Sample.meter_id,
-                                      models.Meter.name, models.Meter.type,
-                                      models.Meter.unit,
-                                      models.Resource.resource_id,
-                                      models.Resource.project_id,
-                                      models.Resource.source_id,
-                                      models.Resource.user_id).join(
-            subq, subq.c.id == models.Sample.id)
-            .join(models.Meter, models.Meter.id == models.Sample.meter_id)
-            .join(models.Resource,
-                  models.Resource.internal_id == models.Sample.resource_id))
-        query_sample = make_query_from_filter(session, query_sample, s_filter,
-                                              require_meter=False)
+            if unique:
+                subq = subq.group_by(models.Sample.meter_id)
+            else:
+                subq = subq.group_by(models.Sample.meter_id,
+                                     models.Resource.resource_id)
+
+            if resource:
+                subq = subq.filter(models.Resource.resource_id == resource)
+            subq = subq.subquery()
+
+            # get meter details for samples.
+            query_sample = (session.query(models.Sample.meter_id,
+                                          models.Meter.name, models.Meter.type,
+                                          models.Meter.unit,
+                                          models.Resource.resource_id,
+                                          models.Resource.project_id,
+                                          models.Resource.source_id,
+                                          models.Resource.user_id)
+                            .join(subq, subq.c.id == models.Sample.id)
+                            .join(models.Meter, models.Meter.id ==
+                                  models.Sample.meter_id)
+                            .join(models.Resource,
+                                  models.Resource.internal_id ==
+                                  models.Sample.resource_id))
+
+            query_sample = make_query_from_filter(
+                session,
+                query_sample,
+                s_filter,
+                require_meter=False
+            )
+
+            if s_filter.meter:
+                query_sample = query_sample.filter(
+                    models.Meter.name == s_filter.meter
+                )
 
         query_sample = query_sample.limit(limit) if limit else query_sample
 
@@ -588,6 +879,34 @@ class Connection(base.Connection):
                     project_id=row.project_id,
                     source=row.source_id,
                     user_id=row.user_id)
+
+    def get_meter_types(self, user=None, project=None, resource=None,
+                        source=None, metaquery=None, limit=None):
+        """Return an iterable of api_models.Meter instances. Params are unused
+
+        :param user: Optional ID for user that owns the resource.
+        :param project: Optional ID for project that owns the resource.
+        :param resource: Optional ID of the resource.
+        :param source: Optional source filter.
+        :param metaquery: Optional dict with metadata to match on.
+        :param limit: Maximum number of results to return.
+        """
+        if limit == 0:
+            return
+        session = self._engine_facade.get_session()
+        query_meters = (session.query(models.Meter.name,
+                                      models.Meter.type,
+                                      models.Meter.unit))
+        query_meters = query_meters.limit(limit) if limit else query_meters
+        for row in query_meters.all():
+            yield api_models.Meter(
+                name=row.name,
+                type=row.type,
+                unit=row.unit,
+                resource_id=None,
+                project_id=None,
+                source=None,
+                user_id=None)
 
     @staticmethod
     def _retrieve_samples(query):
@@ -640,8 +959,16 @@ class Connection(base.Connection):
             models.Resource,
             models.Resource.internal_id == models.Sample.resource_id).order_by(
             models.Sample.timestamp.desc())
-        query = make_query_from_filter(session, query, sample_filter,
-                                       require_meter=False)
+
+        query = make_query_from_filter(
+            session,
+            query,
+            sample_filter,
+            require_meter=False
+        )
+        if sample_filter.meter:
+            query = query.filter(models.Meter.name == sample_filter.meter)
+
         if limit:
             query = query.limit(limit)
         return self._retrieve_samples(query)
@@ -704,6 +1031,7 @@ class Connection(base.Connection):
         return functions
 
     def _make_stats_query(self, sample_filter, groupby, aggregate):
+        # don't add meter filter, let the caller handles it
 
         select = [
             func.min(models.Sample.timestamp).label('tsmin'),
@@ -729,7 +1057,7 @@ class Connection(base.Connection):
         query = (
             session.query(*select)
             .join(models.Meter,
-                  models.Meter.id == models.Sample.meter_id)
+                  models.Sample.meter_id == models.Meter.id)
             .join(models.Resource,
                   models.Resource.internal_id == models.Sample.resource_id)
             .group_by(models.Meter.unit))
@@ -779,6 +1107,99 @@ class Connection(base.Connection):
             (g, getattr(result, g)) for g in groupby) if groupby else None)
         return api_models.Statistics(**stats_args)
 
+    @staticmethod
+    def _stats_result_to_model2(
+            meter_unit, meter_name, duration_start, duration_end,
+            period, period_start, period_end, count, max, sum,
+            avg, min
+    ):
+        stats_args = {
+            'count': count, 'max': max, 'sum': sum, 'avg': avg, 'min': min
+        }
+        stats_args['unit'] = meter_unit
+        stats_args['meter_name'] = meter_name
+        duration = (timeutils.delta_seconds(duration_start, duration_end)
+                    if duration_start is not None and duration_end is not None
+                    else None)
+        stats_args['duration'] = duration
+        stats_args['duration_start'] = duration_start
+        stats_args['duration_end'] = duration_end
+        stats_args['period'] = period
+        stats_args['period_start'] = period_start
+        stats_args['period_end'] = period_end
+        stats_args['groupby'] = dict()
+        return api_models.Statistics(**stats_args)
+
+    def _get_meter(self, meter_name_list):
+        session = self._engine_facade.get_session()
+        result = {}
+        for meter_id, meter_name, meter_unit in session.query(
+                models.Meter.id, models.Meter.name, models.Meter.unit
+        ).filter(
+            models.Meter.name.in_(meter_name_list)
+        ):
+            # make it a lookup table for performance
+            result[str(meter_id)] = {
+                'meter_id': meter_id,
+                'meter_name': meter_name,
+                'meter_unit': meter_unit
+                }
+        return result
+
+    @staticmethod
+    def _generate_meter_statistics_query(sample_filter, meter_ids, period):
+        # use custom build query to aggregate by time period.
+        # note that result set may have some gaps (i.e, no result for certain
+        # period(s))
+        my_query = SimpleQueryGenerator()
+        start_time = sample_filter.start_timestamp
+        end_time = sample_filter.end_timestamp
+        grp_col = 'floor((extract(epoch from sample.timestamp) - ' \
+                  'extract(epoch from timestamp :start_time)) / ' \
+                  ':period) as grp'
+
+        my_query.columns.extend([
+            'sample.meter_id as meter_id',
+            'min(sample.timestamp) AS tsmin',
+            'max(sample.timestamp) AS tsmax',
+            'count(sample.volume) AS cnt',
+            'max(sample.volume) AS max',
+            'sum(sample.volume) AS sum',
+            'avg(sample.volume) AS avg',
+            'min(sample.volume) AS min',
+            grp_col
+        ])
+
+        my_query.froms.append('sample')
+        my_query.joins.append(
+            'join resource on resource.internal_id = sample.resource_id'
+        )
+        my_query.wheres.extend([
+            'sample.timestamp >= :start_time',
+            'sample.timestamp <= :end_time'
+        ])
+
+        idx = 0
+        in_list = []
+        for meter_id in meter_ids:
+            idx += 1
+            m_id_param = 'meter_id_%s' % idx
+            in_list.append(':' + m_id_param)
+            my_query.args[m_id_param] = meter_id
+
+        in_clause = 'sample.meter_id in (%s)' % ','.join(in_list)
+        my_query.wheres.append(in_clause)
+
+        my_query.groups.append('sample.meter_id')
+        my_query.groups.append('grp')
+        my_query.orders.append('grp')
+        my_query.args['period'] = period
+        my_query.args['start_time'] = start_time
+        my_query.args['end_time'] = end_time
+
+        add_stats_filter_to_query(my_query, sample_filter)
+        return my_query
+
     def get_meter_statistics(self, sample_filter, period=None, groupby=None,
                              aggregate=None):
         """Return an iterable of api_models.Statistics instances.
@@ -786,6 +1207,19 @@ class Connection(base.Connection):
         Items are containing meter statistics described by the query
         parameters. The filter must have a meter value set.
         """
+
+        # by definition, a meter filter is required
+        # it was originally from _make_stats_query, move it to the top of
+        # function to be explicit
+        if not sample_filter:
+            return
+        if not sample_filter.meter:
+            return
+
+        meter_list = sample_filter.meter \
+            if isinstance(sample_filter.meter, list) \
+            else [sample_filter.meter]
+
         if groupby:
             for group in groupby:
                 if group not in ['user_id', 'project_id', 'resource_id',
@@ -793,10 +1227,17 @@ class Connection(base.Connection):
                     raise ceilometer.NotImplementedError('Unable to group by '
                                                          'these fields')
 
+        meter_list_dict = self._get_meter(meter_list)
+        meter_id_list = [m['meter_id'] for m in meter_list_dict.itervalues()]
+        if len(meter_id_list) == 0:
+            return
+
         if not period:
-            for res in self._make_stats_query(sample_filter,
-                                              groupby,
-                                              aggregate):
+            q = self._make_stats_query(sample_filter, groupby, aggregate)
+            q = q.filter(
+                models.Sample.meter_id.in_(meter_id_list)
+            )
+            for res in q:
                 if res.count:
                     yield self._stats_result_to_model(res, 0,
                                                       res.tsmin, res.tsmax,
@@ -805,34 +1246,84 @@ class Connection(base.Connection):
             return
 
         if not (sample_filter.start_timestamp and sample_filter.end_timestamp):
-            res = self._make_stats_query(sample_filter,
-                                         None,
-                                         aggregate).first()
+            q = self._make_stats_query(sample_filter, None, aggregate)
+            q = q.filter(
+                models.Sample.meter_id.in_(meter_id_list)
+            )
+            res = q.first()
             if not res:
                 # NOTE(liusheng):The 'res' may be NoneType, because no
                 # sample has found with sample filter(s).
                 return
 
         query = self._make_stats_query(sample_filter, groupby, aggregate)
-        # HACK(jd) This is an awful method to compute stats by period, but
-        # since we're trying to be SQL agnostic we have to write portable
-        # code, so here it is, admire! We're going to do one request to get
-        # stats by period. We would like to use GROUP BY, but there's no
-        # portable way to manipulate timestamp in SQL, so we can't.
-        for period_start, period_end in base.iter_period(
-                sample_filter.start_timestamp or res.tsmin,
-                sample_filter.end_timestamp or res.tsmax,
-                period):
-            q = query.filter(models.Sample.timestamp >= period_start)
-            q = q.filter(models.Sample.timestamp < period_end)
-            for r in q.all():
-                if r.count:
-                    yield self._stats_result_to_model(
-                        result=r,
-                        period=int(timeutils.delta_seconds(period_start,
-                                                           period_end)),
-                        period_start=period_start,
-                        period_end=period_end,
-                        groupby=groupby,
-                        aggregate=aggregate
-                    )
+        if not query:
+            return
+
+        if not sample_filter.start_timestamp:
+            sample_filter.start_timestamp = res.tsmin
+        if not sample_filter.end_timestamp:
+            sample_filter.end_timestamp = res.tsmax
+
+        my_query = self._generate_meter_statistics_query(
+            sample_filter, meter_list_dict.keys(), period
+        )
+
+        sql = my_query.get_sql()
+        select_stm = text(sql)
+
+        start_time = sample_filter.start_timestamp
+        engine = self._engine_facade.get_engine()
+        with engine.begin() as conn:
+            result = conn.execute(select_stm, **my_query.args)
+            for row in result.fetchall():
+                grp_idx = row.grp
+                p_start = start_time + datetime.timedelta(0, period * grp_idx)
+                p_end = p_start + datetime.timedelta(0, period)
+                meter = meter_list_dict[str(row.meter_id)]
+                r = self._stats_result_to_model2(
+                    meter_unit=meter['meter_unit'],
+                    meter_name=meter['meter_name'],
+                    duration_start=row.tsmin,
+                    duration_end=row.tsmax,
+                    period=period,
+                    period_start=p_start,
+                    period_end=p_end,
+                    count=row.cnt,
+                    max=row.max,
+                    sum=row.sum,
+                    avg=row.avg,
+                    min=row.min
+                )
+                yield r
+            result.close()
+
+    def get_resources_batch(self, resource_ids):
+        """Return an iterable of api_models.Resource instances.
+
+        :param resource_ids: Mandatory list of resource IDs.
+        """
+        # WRS extension to the OpenStack Ceilometer SQL storage
+        # connection class. It provides an effective method to retrieve
+        # resource info for a batch of resource ids. This method should be
+        # used when the client does not specify user, project, source,
+        # metaquery, and start/end timestamp range in the request.
+
+        if resource_ids:
+            resids = ','.join(resource_ids)
+            engine = self._engine_facade.get_engine()
+            with engine.connect() as con:
+                stmt = text('SELECT * from resource_getbatch(:input_ids)')
+                results = con.execute(stmt, input_ids=resids)
+            for r in results.fetchall():
+                yield api_models.Resource(
+                    resource_id=r.resource_id,
+                    project_id=r.project_id,
+                    first_sample_timestamp=None,
+                    last_sample_timestamp=None,
+                    source=r.source_id,
+                    user_id=r.user_id,
+                    metadata=jsonutils.loads(r.resource_metadata)
+                )
+        else:
+            raise RuntimeError('Missing required list of resource ids')

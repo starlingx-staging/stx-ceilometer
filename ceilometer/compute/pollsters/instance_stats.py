@@ -30,7 +30,8 @@ class CPUPollster(InstanceStatsPollster):
 
     @staticmethod
     def get_additional_metadata(instance, c_data):
-        return {'cpu_number': c_data.cpu_number}
+        return {'cpu_number': c_data.cpu_number,
+                'vcpu_number': c_data.vcpu_number}
 
 
 class CPUUtilPollster(InstanceStatsPollster):
@@ -55,12 +56,14 @@ class MemorySwapInPollster(InstanceStatsPollster):
     sample_name = 'memory.swap.in'
     sample_unit = 'MB'
     sample_stats_key = 'memory_swap_in'
+    sample_type = sample.TYPE_CUMULATIVE
 
 
 class MemorySwapOutPollster(InstanceStatsPollster):
     sample_name = 'memory.swap.out'
     sample_unit = 'MB'
     sample_stats_key = 'memory_swap_out'
+    sample_type = sample.TYPE_CUMULATIVE
 
 
 class PerfCPUCyclesPollster(InstanceStatsPollster):

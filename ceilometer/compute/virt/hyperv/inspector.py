@@ -12,6 +12,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 """Implementation of Inspector abstraction for Hyper-V"""
+#
+# Copyright (c) 2014-2015 Wind River Systems, Inc.
+#
 
 import collections
 import functools
@@ -103,7 +106,8 @@ class HyperVInspector(virt_inspector.Inspector):
         return virt_inspector.InstanceStats(
             cpu_number=cpu_count,
             cpu_time=cpu_time,
-            memory_usage=memory_usage)
+            memory_usage=memory_usage,
+            vcpu_number=cpu_count)
 
     def inspect_vnics(self, instance, duration):
         instance_name = util.instance_name(instance)

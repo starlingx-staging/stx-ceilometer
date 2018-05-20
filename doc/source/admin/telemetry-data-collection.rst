@@ -12,9 +12,6 @@ Collected data can be stored in the form of samples or events in the
 supported databases, which are listed
 in :ref:`telemetry-supported-databases`.
 
-Samples capture a numerical measurement of a resource. The Telemetry service
-leverages multiple methods to collect data samples.
-
 The available data collection mechanisms are:
 
 Notifications
@@ -37,7 +34,7 @@ RESTful API (deprecated in Ocata)
 
 
 Notifications
-~~~~~~~~~~~~~
+=============
 
 All OpenStack services send notifications about the executed operations
 or system state. Several notifications carry information that can be
@@ -63,141 +60,15 @@ various types of events that happen in the system during normal
 operation. Not all these notifications are consumed by the Telemetry
 service, as the intention is only to capture the billable events and
 notifications that can be used for monitoring or profiling purposes. The
-notification agent filters by the event type. Each notification
-message contains the event type. The following table contains the event
-types by each OpenStack service that Telemetry transforms into samples.
-
-.. list-table::
-   :widths: 10 15 30
-   :header-rows: 1
-
-   * - OpenStack service
-     - Event types
-     - Note
-   * - OpenStack Compute
-     - scheduler.run\_instance.scheduled
-
-       scheduler.select\_\
-       destinations
-
-       compute.instance.\*
-     - For a more detailed list of Compute notifications please
-       check the `System Usage Data wiki page <https://wiki.openstack.org/wiki/
-       SystemUsageData>`__.
-   * - Bare metal service
-     - hardware.ipmi.\*
-     -
-   * - OpenStack Image
-     - image.update
-
-       image.upload
-
-       image.delete
-
-       image.send
-
-     - The required configuration for Image service can be found in the
-       `Configure the Image service for Telemetry <https://docs.openstack.org/project-install-guide/telemetry/ocata>`__
-       section in the Installation Tutorials and Guides.
-   * - OpenStack Networking
-     - floatingip.create.end
-
-       floatingip.update.\*
-
-       floatingip.exists
-
-       network.create.end
-
-       network.update.\*
-
-       network.exists
-
-       port.create.end
-
-       port.update.\*
-
-       port.exists
-
-       router.create.end
-
-       router.update.\*
-
-       router.exists
-
-       subnet.create.end
-
-       subnet.update.\*
-
-       subnet.exists
-
-       l3.meter
-     -
-   * - Orchestration service
-     - orchestration.stack\
-       .create.end
-
-       orchestration.stack\
-       .update.end
-
-       orchestration.stack\
-       .delete.end
-
-       orchestration.stack\
-       .resume.end
-
-       orchestration.stack\
-       .suspend.end
-     -
-   * - OpenStack Block Storage
-     - volume.exists
-
-       volume.create.\*
-
-       volume.delete.\*
-
-       volume.update.\*
-
-       volume.resize.\*
-
-       volume.attach.\*
-
-       volume.detach.\*
-
-       snapshot.exists
-
-       snapshot.create.\*
-
-       snapshot.delete.\*
-
-       snapshot.update.\*
-
-       volume.backup.create.\
-       \*
-
-       volume.backup.delete.\
-       \*
-
-       volume.backup.restore.\
-       \*
-     - The required configuration for Block Storage service can be found in the
-       `Add the Block Storage service agent for Telemetry
-       <https://docs.openstack.org/project-install-guide/telemetry/ocata/cinder/install-cinder-ubuntu.html>`__
-       section in the Installation Tutorials and Guides.
+notifications handled are contained under the `ceilometer.sample.endpoint`
+namespace.
 
 .. note::
 
    Some services require additional configuration to emit the
-   notifications using the correct control exchange on the message
-   queue and so forth. These configuration needs are referred in the
-   above table for each OpenStack service that needs it.
+   notifications. Please see the :ref:`install_controller` for more details.
 
-Specific notifications from the Compute service are important for
-administrators and users. Configuring ``nova_notifications`` in the
-``nova.conf`` file allows administrators to respond to events
-rapidly. For more information on configuring notifications for the
-compute service, see `Telemetry services
-<https://docs.openstack.org/project-install-guide/telemetry/ocata/install-compute-ubuntu.html>`__ in the
-Installation Tutorials and Guides.
+.. _meter_definitions:
 
 Meter definitions
 -----------------
@@ -302,8 +173,10 @@ between two ``datetime`` fields from one notification.
     project_id: $.payload.tenant_id
     resource_id: $.payload.instance_id
 
+.. _Polling-Configuration:
+
 Polling
-~~~~~~~
+=======
 
 The Telemetry service is intended to store a complex picture of the
 infrastructure. This goal requires additional information than what is
@@ -317,6 +190,54 @@ services and other assets, like hypervisors. The latter case requires
 closer interaction with the compute hosts. To solve this issue,
 Telemetry uses an agent based architecture to fulfill the requirements
 against the data collection.
+
+Configuration
+-------------
+
+Polling rules are defined by the `polling.yaml` file. It defines the pollsters
+to enable and the interval they should be polled.
+
+Each source configuration encapsulates meter name matching which matches
+against the entry point of pollster. It also includes: polling
+interval determination, optional resource enumeration or discovery.
+
+All samples generated by polling are placed on the queue to be handled by
+the pipeline configuration loaded in the notification agent.
+
+The polling definition may look like the following::
+
+    ---
+    sources:
+      - name: 'source name'
+        interval: 'how often the samples should be generated'
+        meters:
+          - 'meter filter'
+        resources:
+          - 'list of resource URLs'
+        discovery:
+          - 'list of discoverers'
+
+The *interval* parameter in the sources section defines the cadence of sample
+generation in seconds.
+
+Polling plugins are invoked according to each source's section whose *meters*
+parameter matches the plugin's meter name. Its matching logic functions the
+same as pipeline filtering.
+
+The optional *resources* section of a polling source allows a list of
+static resource URLs to be configured. An amalgamated list of all
+statically defined resources are passed to individual pollsters for polling.
+
+The optional *discovery* section of a polling source contains the list of
+discoverers. These discoverers can be used to dynamically discover the
+resources to be polled by the pollsters.
+
+If both *resources* and *discovery* are set, the final resources passed to the
+pollsters will be the combination of the dynamic resources returned by the
+discoverers and the static resources defined in the *resources* section.
+
+Agents
+------
 
 There are three types of agents supporting the polling mechanism, the
 ``compute agent``, the ``central agent``, and the ``IPMI agent``. Under
@@ -359,7 +280,7 @@ polling plug-ins to be loaded by using the ``pollster-list`` option:
    used.
 
 Compute agent
--------------
+~~~~~~~~~~~~~
 
 This agent is responsible for collecting resource usage data of VM
 instances on individual compute nodes within an OpenStack deployment.
@@ -369,14 +290,8 @@ meters, which is placed on the host machines to retrieve this
 information locally.
 
 A Compute agent instance has to be installed on each and every compute
-node, installation instructions can be found in the `Install the Compute
-agent for Telemetry
-<https://docs.openstack.org/project-install-guide/telemetry/ocata/install-compute-ubuntu.html>`__
+node, installation instructions can be found in the :ref:`install_compute`
 section in the Installation Tutorials and Guides.
-
-The compute agent does not need direct database connection. The samples
-collected by this agent are sent via AMQP to the notification agent to be
-processed.
 
 The list of supported hypervisors can be found in
 :ref:`telemetry-supported-hypervisors`. The Compute agent uses the API of the
@@ -388,41 +303,27 @@ The list of collected meters can be found in :ref:`telemetry-compute-meters`.
 The support column provides the information about which meter is available for
 each hypervisor supported by the Telemetry service.
 
-.. note::
-
-    Telemetry supports Libvirt, which hides the hypervisor under it.
-
 Central agent
--------------
+~~~~~~~~~~~~~
 
 This agent is responsible for polling public REST APIs to retrieve additional
 information on OpenStack resources not already surfaced via notifications,
 and also for polling hardware resources over SNMP.
 
-The following services can be polled with this agent:
+Some of the services polled with this agent are:
 
 -  OpenStack Networking
-
 -  OpenStack Object Storage
-
 -  OpenStack Block Storage
-
 -  Hardware resources via SNMP
 
--  Energy consumption meters via `Kwapi <https://launchpad.net/kwapi>`__
-   framework (deprecated in Newton)
-
-To install and configure this service use the `Add the Telemetry service
-<https://docs.openstack.org/project-install-guide/telemetry/ocata/install-base-ubuntu.html>`__
+To install and configure this service use the :ref:`install_rdo`
 section in the Installation Tutorials and Guides.
-
-Just like the compute agent, this component also does not need a direct
-database connection. The samples are sent via AMQP to the notification agent.
 
 .. _telemetry-ipmi-agent:
 
 IPMI agent
-----------
+~~~~~~~~~~
 
 This agent is responsible for collecting IPMI sensor data and Intel Node
 Manager data on individual compute nodes within an OpenStack deployment.
@@ -437,9 +338,6 @@ compute node without IPMI or Intel Node Manager support, as the agent
 checks for the hardware and if none is available, returns empty data. It
 is suggested that you install the IPMI agent only on an IPMI capable
 node for performance reasons.
-
-Just like the central agent, this component also does not need direct
-database access. The samples are sent via AMQP to the notification agent.
 
 The list of collected meters can be found in
 :ref:`telemetry-bare-metal-service`.

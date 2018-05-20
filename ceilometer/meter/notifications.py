@@ -38,12 +38,7 @@ OPTS = [
                     "according to the parameter."
                ),
     cfg.MultiStrOpt('meter_definitions_dirs',
-                    default=["/etc/ceilometer/meters.d",
-                             os.path.abspath(
-                                 os.path.join(
-                                     os.path.split(
-                                         os.path.dirname(__file__))[0],
-                                     "data", "meters.d"))],
+                    default=["/etc/ceilometer/meters.d"],
                     help="List directory to find files of "
                          "defining meter notifications."
                     ),

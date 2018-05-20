@@ -12,6 +12,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 import mock
 
 from ceilometer import middleware
@@ -97,4 +100,4 @@ class TestNotifications(base.BaseTestCase):
 
     def test_targets(self):
         targets = middleware.HTTPRequest(mock.Mock()).get_targets(self.CONF)
-        self.assertEqual(13, len(targets))
+        self.assertEqual(14, len(targets))

@@ -13,6 +13,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 
 import os
 import uuid
@@ -37,7 +40,7 @@ OPTS = [
 API_OPTS = [
     cfg.IntOpt('default_api_return_limit',
                min=1,
-               default=100,
+               default=500,
                help='Default maximum number of items returned by API request.'
                ),
 ]
@@ -82,7 +85,7 @@ global APPCONFIGS
 APPCONFIGS = {}
 
 
-def load_app(conf):
+def load_app(conf, args=None):
     global APPCONFIGS
 
     # Build the WSGI app
@@ -96,12 +99,20 @@ def load_app(conf):
     if not cfg_file:
         raise cfg.ConfigFilesNotFoundError([conf.api_paste_config])
 
+    config = dict([(key, value) for key, value in args.iteritems()
+                   if key in conf and value is not None])
+    for key, value in config.iteritems():
+        if key == 'config_file':
+            conf.config_file = value
+        if key == 'pipeline_cfg_file':
+            conf.pipeline_cfg_file = value
+
     configkey = str(uuid.uuid4())
     APPCONFIGS[configkey] = conf
 
     LOG.info("Full WSGI config used: %s", cfg_file)
-    LOG.warning("Note: Ceilometer API is deprecated; use APIs from Aodh"
-                " (alarms), Gnocchi (metrics) and/or Panko (events).")
+    LOG.debug("Note: Ceilometer API is deprecated; use APIs from Aodh"
+              " (alarms), Gnocchi (metrics) and/or Panko (events).")
     return deploy.loadapp("config:" + cfg_file,
                           global_conf={'configkey': configkey})
 

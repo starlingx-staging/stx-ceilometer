@@ -18,11 +18,16 @@ import cotyledon
 from cotyledon import oslo_config_glue
 
 from ceilometer import notification
+from ceilometer import pipeline
 from ceilometer import service
+
+from oslo_config import cfg
 
 
 def main():
-    conf = service.prepare_service()
+    conf = cfg.ConfigOpts()
+    conf.register_cli_opts(pipeline.OPTS)
+    service.prepare_service(conf=conf)
 
     sm = cotyledon.ServiceManager()
     sm.add(notification.NotificationService,

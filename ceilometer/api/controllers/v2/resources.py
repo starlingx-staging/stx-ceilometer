@@ -17,7 +17,11 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2013-2016 Wind River Systems, Inc.
+#
 
+import ast
 import datetime
 from six.moves import urllib
 
@@ -100,7 +104,7 @@ class ResourcesController(rest.RestController):
                                                  type_arg, query_str),
                          rel=rel_name)
 
-    def _resource_links(self, resource_id, meter_links=1):
+    def _resource_links(self, resource_id, meter_links=0):
         links = [self._make_link('self', pecan.request.application_url,
                                  'resources', resource_id)]
         if meter_links:
@@ -135,7 +139,7 @@ class ResourcesController(rest.RestController):
                                           self._resource_links(resource_id))
 
     @wsme_pecan.wsexpose([Resource], [base.Query], int, int)
-    def get_all(self, q=None, limit=None, meter_links=1):
+    def get_all(self, q=None, limit=None, meter_links=0):
         """Retrieve definitions of all of the resources.
 
         :param q: Filter rules for the resources to be returned.
@@ -146,13 +150,33 @@ class ResourcesController(rest.RestController):
         rbac.enforce('get_resources', pecan.request)
 
         q = q or []
-        limit = utils.enforce_limit(limit)
-        kwargs = utils.query_to_kwargs(
-            q, pecan.request.storage_conn.get_resources, ['limit'])
-        resources = [
-            Resource.from_db_and_links(r,
-                                       self._resource_links(r.resource_id,
-                                                            meter_links))
-            for r in pecan.request.storage_conn.get_resources(limit=limit,
-                                                              **kwargs)]
-        return resources
+        r_ids = []
+        if len(q) == 1:
+            # Improve query time for meter-based stats reports from
+            # Horizon. Get resource info for specified resource ids in one
+            # call as opposed to one by one.
+            # q is a list of Query objects. Convert the first and
+            # only item to dictionary to retrieve the list of resource ids.
+            d = q[0].as_dict()
+            if d['field'] == 'resource_ids':
+                r_ids = ast.literal_eval(d['value'])
+
+        if r_ids:
+            resources = [Resource.from_db_and_links(r,
+                                                    self._resource_links(
+                                                        r.resource_id,
+                                                        meter_links)) for r
+                         in pecan.request.storage_conn.get_resources_batch(
+                r_ids)]
+            return resources
+        else:
+            limit = utils.enforce_limit(limit)
+            kwargs = utils.query_to_kwargs(
+                q, pecan.request.storage_conn.get_resources, ['limit'])
+            resources = [Resource.from_db_and_links(r,
+                                                    self._resource_links(
+                                                        r.resource_id,
+                                                        meter_links)) for r
+                         in pecan.request.storage_conn.get_resources(
+                limit=limit, **kwargs)]
+            return resources

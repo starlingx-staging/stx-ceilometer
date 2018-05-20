@@ -10,6 +10,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 
 import functools
 
@@ -29,6 +32,9 @@ OPTS = [
                 deprecated_for_removal=True,
                 help=('Allow novaclient\'s debug log output. '
                       '(Use default_log_levels instead)')),
+    cfg.IntOpt('max_timing_buffer',
+               default=200,
+               help='The max number of the timing objects to keep'),
 ]
 
 SERVICE_OPTS = [
@@ -53,6 +59,17 @@ def logged(func):
     return with_logging
 
 
+def _get_region_name(conf, service_type):
+    reg = conf.region_name_for_services
+    # If Shared Services configured, override region for image/volumes
+    shared_services_region_name = conf.region_name_for_shared_services
+    shared_services_types = conf.shared_services_types
+    if shared_services_region_name:
+        if service_type in shared_services_types:
+            reg = shared_services_region_name
+    return reg
+
+
 class Client(object):
     """A client which gets information via python-novaclient."""
 
@@ -71,7 +88,7 @@ class Client(object):
             session=ks_session,
 
             # nova adapter options
-            region_name=creds.region_name,
+            region_name=_get_region_name(conf, conf.service_types.nova),
             endpoint_type=creds.interface,
             service_type=conf.service_types.nova,
             logger=logger)
@@ -79,9 +96,18 @@ class Client(object):
         self.glance_client = glanceclient.Client(
             version='2',
             session=ks_session,
-            region_name=creds.region_name,
+            region_name=_get_region_name(conf, conf.service_types.glance),
             interface=creds.interface,
             service_type=conf.service_types.glance)
+
+        # TO DO (dbadea): remove condition after updating nova_client
+        if hasattr(self.nova_client, 'set_timings_max_len'):
+            self.nova_client.set_timings_max_len(
+                conf.nova_client.max_timing_buffer)
+
+    def rebuild_client(self):
+        LOG.warning("Repairing Nova Client")
+        self.__init__()
 
     def _with_flavor_and_image(self, instances):
         flavor_cache = {}
@@ -100,6 +126,9 @@ class Client(object):
             try:
                 flavor = self.nova_client.flavors.get(fid)
             except novaclient.exceptions.NotFound:
+                flavor = None
+            except novaclient.exceptions.Unauthorized:
+                self.rebuild_client()
                 flavor = None
             cache[fid] = flavor
 
@@ -129,6 +158,9 @@ class Client(object):
                 image = self.glance_client.images.get(iid)
             except glanceclient.exc.HTTPNotFound:
                 image = None
+            except novaclient.exceptions.Unauthorized:
+                self.rebuild_client()
+                image = None
             cache[iid] = image
 
         attr_defaults = [('kernel_id', None),
@@ -152,9 +184,15 @@ class Client(object):
         search_opts = {'host': hostname, 'all_tenants': True}
         if since:
             search_opts['changes-since'] = since
-        return self._with_flavor_and_image(self.nova_client.servers.list(
-            detailed=True,
-            search_opts=search_opts))
+        try:
+            return self._with_flavor_and_image(self.nova_client.servers.list(
+                detailed=True,
+                search_opts=search_opts))
+        except novaclient.exceptions.Unauthorized:
+            self.rebuild_client()
+            return self._with_flavor_and_image(self.nova_client.servers.list(
+                detailed=True,
+                search_opts=search_opts))
 
     @logged
     def instance_get_all(self, since=None):
@@ -166,6 +204,21 @@ class Client(object):
         search_opts = {'all_tenants': True}
         if since:
             search_opts['changes-since'] = since
-        return self.nova_client.servers.list(
-            detailed=True,
-            search_opts=search_opts)
+        try:
+            return self.nova_client.servers.list(
+                detailed=True,
+                search_opts=search_opts)
+        except novaclient.exceptions.Unauthorized:
+            self.rebuild_client()
+            return self.nova_client.servers.list(
+                detailed=True,
+                search_opts=search_opts)
+
+    @logged
+    def floating_ip_get_all(self):
+        """Returns all floating ips."""
+        try:
+            return self.nova_client.floating_ips.list()
+        except novaclient.exceptions.Unauthorized:
+            self.rebuild_client()
+            return self.nova_client.floating_ips.list()

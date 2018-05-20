@@ -214,6 +214,9 @@ def _validate_timestamp_fields(query, field_name, operator_list,
 
 def query_to_kwargs(query, db_func, internal_keys=None,
                     allow_timestamps=True):
+    if not query:
+        return {}
+
     validate_query(query, db_func, internal_keys=internal_keys,
                    allow_timestamps=allow_timestamps)
     query = sanitize_query(query, db_func)

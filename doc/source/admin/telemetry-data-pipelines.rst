@@ -34,11 +34,7 @@ The pipeline configuration is, by default stored in separate configuration
 files called ``pipeline.yaml`` and ``event_pipeline.yaml`` next to
 the ``ceilometer.conf`` file. The meter pipeline and event pipeline
 configuration files can be set by the ``pipeline_cfg_file`` and
-``event_pipeline_cfg_file`` options listed in the `Description of
-configuration options for api table
-<https://docs.openstack.org/ocata/config-reference/telemetry/telemetry-config-options.html>`__
-section in the OpenStack Configuration Reference respectively. Multiple
-pipelines can be defined in one pipeline configuration file.
+``event_pipeline_cfg_file`` options listed in :ref:`configuring`.
 
 The meter pipeline definition looks like:
 
@@ -49,7 +45,7 @@ The meter pipeline definition looks like:
      - name: 'source name'
        meters:
          - 'meter filter'
-       sinks
+       sinks:
          - 'sink name'
    sinks:
      - name: 'sink name'
@@ -132,7 +128,7 @@ Similarly, the event pipeline definition looks like:
      - name: 'source name'
        events:
          - 'event filter'
-       sinks
+       sinks:
          - 'sink name'
    sinks:
      - name: 'sink name'
@@ -145,6 +141,12 @@ The event filter uses the same filtering logic as the meter pipeline.
 
 Transformers
 ------------
+
+.. note::
+
+   Transformers maintain data in memory and therefore do not guarantee
+   durability in certain scenarios. A more durable and efficient solution
+   may be achieved post-storage using solutions like Gnocchi.
 
 The definition of transformers can contain the following fields:
 
@@ -380,13 +382,6 @@ be configured for each data point within the Telemetry service, allowing
 the same technical meter or event to be published multiple times to
 multiple destinations, each potentially using a different transport.
 
-Publishers are specified in the ``publishers`` section for each
-pipeline that is defined in the `pipeline.yaml
-<https://git.openstack.org/cgit/openstack/ceilometer/plain/ceilometer/pipeline/data/pipeline.yaml>`__
-and the `event_pipeline.yaml
-<https://git.openstack.org/cgit/openstack/ceilometer/plain/ceilometer/pipeline/data/event_pipeline.yaml>`__
-files.
-
 The following publisher types are supported:
 
 gnocchi (default)
@@ -524,7 +519,6 @@ specified. A sample ``publishers`` section in the
        - notifier://?policy=drop&max_queue_length=512&topic=custom_target
        - direct://?dispatcher=http
 
-
 Deprecated publishers
 ---------------------
 
@@ -616,3 +610,32 @@ The level of support differs in case of the configured back end:
      - DB2 NoSQL does not have native TTL
        nor ``ceilometer-expirer`` support.
 
+Pipeline Partitioning
+~~~~~~~~~~~~~~~~~~~~~
+
+.. note::
+
+   Partitioning is only required if pipelines contain transformations. It has
+   secondary benefit of supporting batching in certain publishers.
+
+On large workloads, multiple notification agents can be deployed to handle the
+flood of incoming messages from monitored services. If transformations are
+enabled in the pipeline, the notification agents must be coordinated to ensure
+related messages are routed to the same agent. To enable coordination, set the
+``workload_partitioning`` value in ``notification`` section.
+
+To distribute messages across agents, ``pipeline_processing_queues`` option
+should be set. This value defines how many pipeline queues to create which will
+then be distributed to the active notification agents. It is recommended that
+the number of processing queues, at the very least, match the number of agents.
+
+Increasing the number of processing queues will improve the distribution of
+messages across the agents. It will also help batching which minimises the
+requests to Gnocchi storage backend. It will also increase the load the on
+message queue as it uses the queue to shard data.
+
+.. warning::
+
+   Decreasing the number of processing queues may result in lost data as any
+   previously created queues may no longer be assigned to active agents. It
+   is only recommended that you **increase** processing queues.

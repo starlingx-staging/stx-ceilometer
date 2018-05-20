@@ -14,11 +14,13 @@
 
 """Utils to run ipmitool for data collection"""
 from oslo_concurrency import processutils
+from oslo_log import log
 
 from ceilometer.i18n import _
 from ceilometer.ipmi.platform import exception as ipmiexcept
 from ceilometer import utils
 
+LOG = log.getLogger(__name__)
 
 # Following 2 functions are copied from ironic project to handle ipmitool's
 # sensor data output. Need code clean and sharing in future.
@@ -31,13 +33,12 @@ def _get_sensor_type(sensor_data_dict):
 
     for key in ('Sensor Type (Analog)', 'Sensor Type (Discrete)',
                 'Sensor Type (Threshold)'):
-        try:
+        if key in sensor_data_dict.keys():
             return sensor_data_dict[key].split(' ', 1)[0]
-        except KeyError:
-            continue
 
-    raise ipmiexcept.IPMIException(_("parse IPMI sensor data failed,"
-                                     "unknown sensor type"))
+    LOG.error(_("parse ipmi sensor data failed, unknown sensor type "
+                "data: %(sensors_data)s"), {'sensors_data': sensor_data_dict})
+    return None
 
 
 def _process_sensor(sensor_data):
@@ -67,11 +68,15 @@ def _translate_output(output):
         if not sensor_data_dict:
             continue
 
-        sensor_type = _get_sensor_type(sensor_data_dict)
-
         # ignore the sensors which have no current 'Sensor Reading' data
         sensor_id = sensor_data_dict['Sensor ID']
         if 'Sensor Reading' in sensor_data_dict:
+            # obtain the sensor reading type if the sensor supports
+            # reading
+            sensor_type = _get_sensor_type(sensor_data_dict)
+            # ignore the sensors that have unknown types
+            if sensor_type is None:
+                continue
             sensors_data_dict.setdefault(sensor_type,
                                          {})[sensor_id] = sensor_data_dict
 

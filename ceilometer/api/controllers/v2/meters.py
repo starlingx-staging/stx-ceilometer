@@ -17,6 +17,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 
 import base64
 import datetime
@@ -473,6 +476,24 @@ class Meter(base.Base):
                    user_id='efd87807-12d2-4b38-9c70-5f5c2ac427ff',
                    source='openstack',
                    )
+
+    # The following 4 methods are required to deal with adding to set
+    # ne and hash should be moved to Base
+    # All other subclasses of Base should implement eq and repr
+    def __repr__(self):
+        return "Meter(%s, %s)" % (self.name, self.meter_id)
+
+    def __eq__(self, other):
+        if isinstance(other, Meter):
+            return self.meter_id == other.meter_id
+        else:
+            return False
+
+    def __ne__(self, other):
+        return (not self.__eq__(other))
+
+    def __hash__(self):
+        return hash(self.__repr__())
 
 
 class MetersController(rest.RestController):

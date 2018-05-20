@@ -63,7 +63,7 @@ Notifications mechanism uses plugins as well, for instance
 which is defined in the ``ceilometer/telemetry/notifications`` folder, Though
 in most cases, this is not needed. A meter definition can be directly added
 to :file:`ceilometer/data/meters.d/meters.yaml` to match the event type. For
-more information, see the :ref:`add_new_meters` page.
+more information, see the :ref:`meter_definitions` page.
 
 We are using these two existing plugins as examples as the first one provides
 an example of how to interact when you need to retrieve information from an
@@ -126,13 +126,13 @@ Notifications are defined as subclass of the
 :class:`ceilometer.agent.plugin_base.NotificationBase` meta class.
 Notifications must implement:
 
-   ``event_types``
-      A sequence of strings defining the event types to be given to the plugin
+``event_types``
+   A sequence of strings defining the event types to be given to the plugin
 
-   ``process_notification(self, message)`` 
-      Receives an event message from the list provided to ``event_types`` and
-      returns a sequence of ``Sample`` objects as defined in the
-      :file:`ceilometer/sample.py` file.
+``process_notification(self, message)`` 
+   Receives an event message from the list provided to ``event_types`` and
+   returns a sequence of ``Sample`` objects as defined in the
+   :file:`ceilometer/sample.py` file.
 
 In the ``InstanceNotifications`` plugin, it listens to three events:
 

@@ -12,9 +12,13 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2013-2016 Wind River Systems, Inc.
+#
 
 from itertools import chain
 import select
+import signal
 import socket
 
 import cotyledon
@@ -150,9 +154,19 @@ class CollectorService(cotyledon.Service):
                                 'discarding: %s', sample)
 
     def terminate(self):
-        if self.sample_listener:
+        try:
+            signal.signal(signal.SIGHUP, signal.SIG_IGN)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        except Exception:
+            LOG.debug("Signal only works in main thread.")
+
+        # Parent process does not have sample_listener and
+        # event-listener. Ensure the stop sequence is run to completion
+        # otherwise the child processes won't get terminated and release
+        # there database connections.
+        if getattr(self, 'sample_listener', None):
             utils.kill_listeners([self.sample_listener])
-        if self.event_listener:
+        if getattr(self, 'event_listener', None):
             utils.kill_listeners([self.event_listener])
         if self.udp_thread:
             self.udp_run = False

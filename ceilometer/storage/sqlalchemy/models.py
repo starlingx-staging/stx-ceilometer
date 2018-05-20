@@ -9,6 +9,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 
 """
 SQLAlchemy models for Ceilometer data.
@@ -194,13 +197,13 @@ class Resource(Base):
     metadata_hash = deferred(Column(String(32)))
     samples = relationship("Sample", backref="resource")
     meta_text = relationship("MetaText", backref="resource",
-                             cascade="all, delete-orphan")
+                             cascade="all, delete, delete-orphan")
     meta_float = relationship("MetaFloat", backref="resource",
-                              cascade="all, delete-orphan")
+                              cascade="all, delete, delete-orphan")
     meta_int = relationship("MetaBigInt", backref="resource",
-                            cascade="all, delete-orphan")
+                            cascade="all, delete, delete-orphan")
     meta_bool = relationship("MetaBool", backref="resource",
-                             cascade="all, delete-orphan")
+                             cascade="all, delete, delete-orphan")
 
 
 @event.listens_for(Resource, "before_insert")
@@ -220,7 +223,7 @@ class Sample(Base):
         Index('ix_sample_meter_id_resource_id', 'meter_id', 'resource_id'),
         _COMMON_TABLE_ARGS,
     )
-    id = Column(Integer, primary_key=True)
+    id = Column(BigInteger, primary_key=True)
     meter_id = Column(Integer, ForeignKey('meter.id'))
     resource_id = Column(Integer, ForeignKey('resource.internal_id'))
     volume = Column(Float(53))

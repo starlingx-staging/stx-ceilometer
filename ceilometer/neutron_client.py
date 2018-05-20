@@ -34,6 +34,17 @@ SERVICE_OPTS = [
 LOG = log.getLogger(__name__)
 
 
+def _get_region_name(conf, service_type):
+    reg = conf.region_name_for_services
+    # If Shared Services configured, override region for image/volumes
+    shared_services_region_name = conf.region_name_for_shared_services
+    shared_services_types = conf.shared_services_types
+    if shared_services_region_name:
+        if service_type in shared_services_types:
+            reg = shared_services_region_name
+    return reg
+
+
 def logged(func):
 
     @functools.wraps(func)
@@ -61,7 +72,7 @@ class Client(object):
         params = {
             'session': keystone_client.get_session(conf),
             'endpoint_type': creds.interface,
-            'region_name': creds.region_name,
+            'region_name': _get_region_name(conf, conf.service_types.neutron),
             'service_type': conf.service_types.neutron,
         }
         self.client = clientv20.Client(**params)

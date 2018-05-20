@@ -11,6 +11,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 
 import fixtures
 import glanceclient
@@ -247,3 +250,10 @@ class TestNovaClient(base.BaseTestCase):
         self.CONF.set_override("nova_http_log_debug", True)
         self.nv = nova_client.Client(self.CONF)
         self.assertIsNotNone(self.nv.nova_client.client.logger)
+
+    def test_with_max_timing_buffer(self):
+        self.CONF.set_override("max_timing_buffer", 300)
+        self.nv = nova_client.Client(self.CONF)
+        # TO DO (dbadea): remove condition after updating nova_client
+        if hasattr(self.nv.nova_client, 'get_timings_max_len'):
+            self.assertEqual(300, self.nv.nova_client.get_timings_max_len())

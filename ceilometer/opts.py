@@ -47,6 +47,7 @@ import ceilometer.nova_client
 import ceilometer.objectstore.rgw
 import ceilometer.objectstore.swift
 import ceilometer.pipeline
+import ceilometer.publisher.csvfile
 import ceilometer.publisher.messaging
 import ceilometer.publisher.utils
 import ceilometer.sample
@@ -72,6 +73,13 @@ OPTS = [
                min=1,
                help='Maximum number of parallel requests for '
                'services to handle at the same time.'),
+    cfg.StrOpt('region_name_for_services',
+               help='Default region name used to get services endpoints.'),
+    cfg.StrOpt('region_name_for_shared_services',
+               help='Default region name for shared services endpoints.'),
+    cfg.ListOpt('shared_services_types',
+                default=['image', 'volume', 'volumev2', 'volumev3'],
+                help='The shared services located in the other region.'),
 ]
 
 
@@ -129,6 +137,8 @@ def list_opts():
                          ceilometer.notification.EXCHANGES_OPTS)),
         ('polling', ceilometer.agent.manager.POLLING_OPTS),
         ('publisher', ceilometer.publisher.utils.OPTS),
+        ('publisher_csvfile',
+         ceilometer.publisher.csvfile.CSV_METER_PUBLISH_OPTS),
         ('publisher_notifier', ceilometer.publisher.messaging.NOTIFIER_OPTS),
         ('rgw_admin_credentials', ceilometer.objectstore.rgw.CREDENTIAL_OPTS),
         ('service_types',

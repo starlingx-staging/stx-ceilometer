@@ -13,7 +13,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 """Inspector abstraction for read-only access to hypervisors."""
-
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 import collections
 
 from oslo_config import cfg
@@ -40,6 +42,7 @@ LOG = log.getLogger(__name__)
 class InstanceStats(object):
     fields = [
         'cpu_number',              # number: number of CPUs
+        'vcpu_number',             # number: number of VCPUs
         'cpu_time',                # time: cumulative CPU time
         'cpu_util',                # util: CPU utilization in percentage
         'cpu_l3_cache_usage',      # cachesize: Amount of CPU L3 cache used

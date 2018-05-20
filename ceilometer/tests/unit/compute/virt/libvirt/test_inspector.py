@@ -58,6 +58,9 @@ class TestLibvirtInspection(base.BaseTestCase):
                                            'rss': 30000,
                                            'swap_in': 5120,
                                            'swap_out': 8192}
+        domain.vcpus.return_value = (None, [(True, False, False),
+                                            (False, True, False),
+                                            (True, False, False)])
         conn = mock.Mock()
         conn.lookupByUUIDString.return_value = domain
         conn.domainListGetStats.return_value = [({}, {
@@ -99,6 +102,9 @@ class TestLibvirtInspection(base.BaseTestCase):
         domain.memoryStats.return_value = {'available': 51200,
                                            'unused': 25600,
                                            'rss': 30000}
+        domain.vcpus.return_value = (None, [(True, False, False),
+                                            (False, True, False),
+                                            (True, False, False)])
         conn = mock.Mock()
         conn.lookupByUUIDString.return_value = domain
         conn.domainListGetStats.return_value = [({}, {
@@ -367,7 +373,7 @@ class TestLibvirtInspection(base.BaseTestCase):
         with mock.patch('ceilometer.compute.virt.libvirt.utils.'
                         'refresh_libvirt_connection', return_value=conn):
             disks = list(self.inspector.inspect_disk_info(self.instance, None))
-            self.assertEqual(0, len(disks))
+            self.assertEqual(1, len(disks))
 
     def test_inspect_disk_info_without_source_element(self):
         dom_xml = """
@@ -397,6 +403,44 @@ class TestLibvirtInspection(base.BaseTestCase):
             disks = list(self.inspector.inspect_disk_info(self.instance, None))
             self.assertEqual(0, len(disks))
 
+    def test_inspect_disks_without_source_element(self):
+        dom_xml = """
+             <domain type='kvm'>
+                 <devices>
+                    <disk type='file' device='cdrom'>
+                        <driver name='qemu' type='raw' cache='none'/>
+                        <backingStore/>
+                        <target dev='hdd' bus='ide' tray='open'/>
+                        <readonly/>
+                        <alias name='ide0-1-1'/>
+                        <address type='drive' controller='0' bus='1'
+                                 target='0' unit='1'/>
+                     </disk>
+                 </devices>
+             </domain>
+        """
+        blockStatsFlags = {'wr_total_times': 91752302267,
+                           'rd_operations': 6756,
+                           'flush_total_times': 1310427331,
+                           'rd_total_times': 29142253616,
+                           'rd_bytes': 171460096,
+                           'flush_operations': 746,
+                           'wr_operations': 1437,
+                           'wr_bytes': 13574656}
+        domain = mock.Mock()
+        domain.XMLDesc.return_value = dom_xml
+        domain.info.return_value = (0, 0, 0, 2, 999999)
+        domain.blockStats.return_value = (1, 2, 3, 4, -1)
+        domain.blockStatsFlags.return_value = blockStatsFlags
+        conn = mock.Mock()
+        conn.lookupByUUIDString.return_value = domain
+
+        with mock.patch('ceilometer.compute.virt.libvirt.utils.'
+                        'refresh_libvirt_connection', return_value=conn):
+            disks = list(self.inspector.inspect_disks(self.instance, None))
+
+            self.assertEqual(0, len(disks))
+
     def test_inspect_memory_usage_with_domain_shutoff(self):
         domain = mock.Mock()
         domain.info.return_value = (5, 0, 51200, 2, 999999)
@@ -413,6 +457,9 @@ class TestLibvirtInspection(base.BaseTestCase):
         domain = mock.Mock()
         domain.info.return_value = (0, 0, 51200, 2, 999999)
         domain.memoryStats.return_value = {}
+        domain.vcpus.return_value = (None, [(True, False, False),
+                                            (False, True, False),
+                                            (True, False, False)])
         conn = mock.Mock()
         conn.domainListGetStats.return_value = [({}, {})]
         conn.lookupByUUIDString.return_value = domain
@@ -431,6 +478,9 @@ class TestLibvirtInspection(base.BaseTestCase):
         domain.memoryStats.return_value = {'rss': 0,
                                            'available': 51200,
                                            'unused': 25600}
+        domain.vcpus.return_value = (None, [(True, False, False),
+                                            (False, True, False),
+                                            (True, False, False)])
         conn = mock.Mock()
         conn.domainListGetStats.return_value = [({}, {})]
         conn.lookupByUUIDString.return_value = domain

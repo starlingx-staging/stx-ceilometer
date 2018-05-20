@@ -17,6 +17,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 
 from keystoneauth1 import exceptions
 from oslo_config import cfg
@@ -25,10 +28,14 @@ from oslo_utils import strutils
 import pecan
 
 from ceilometer.api.controllers.v2 import capabilities
+from ceilometer.api.controllers.v2 import extensions
 from ceilometer.api.controllers.v2 import meters
+from ceilometer.api.controllers.v2 import metertypes
+from ceilometer.api.controllers.v2 import pipelines
 from ceilometer.api.controllers.v2 import query
 from ceilometer.api.controllers.v2 import resources
 from ceilometer.api.controllers.v2 import samples
+from ceilometer.api.controllers.v2 import statistics
 from ceilometer.i18n import _
 from ceilometer import keystone_client
 
@@ -96,6 +103,10 @@ class V2Controller(object):
     """Version 2 API controller root."""
 
     capabilities = capabilities.CapabilitiesController()
+    vars()['wrs-metertypes'] = metertypes.MeterTypesController()
+    vars()['wrs-pipelines'] = pipelines.PipelinesController()
+    vars()['wrs-statistics'] = statistics.StatisticsController()
+    extensions = extensions.ExtensionsController()
 
     def __init__(self):
         self._gnocchi_is_enabled = None
@@ -151,9 +162,9 @@ class V2Controller(object):
                     LOG.warning("Can't connect to keystone, assuming aodh "
                                 "is disabled and retry later.")
                 else:
-                    LOG.warning("ceilometer-api started with aodh "
-                                "enabled. Alarms URLs will be redirected "
-                                "to aodh endpoint.")
+                    LOG.debug("ceilometer-api started with aodh "
+                              "enabled. Alarms URLs will be redirected "
+                              "to aodh endpoint.")
         return self._aodh_url
 
     @property
@@ -177,9 +188,9 @@ class V2Controller(object):
                         "Can't connect to keystone, assuming Panko "
                         "is disabled and retry later.")
                 else:
-                    LOG.warning("ceilometer-api started with Panko "
-                                "enabled. Events URLs will be redirected "
-                                "to Panko endpoint.")
+                    LOG.debug("ceilometer-api started with Panko "
+                              "enabled. Events URLs will be redirected "
+                              "to Panko endpoint.")
         return self._panko_url
 
     @pecan.expose()

@@ -25,10 +25,10 @@ from ceilometer import service
 LOG = log.getLogger(__name__)
 
 
-def build_wsgi_app(argv=None):
+def build_wsgi_app(argv=None, args=None):
     conf = service.prepare_service(argv=argv)
     conf.register_opts(oslo_config_glue.service_opts)
     if conf.log_options:
         LOG.debug('Full set of CONF:')
         conf.log_opt_values(LOG, logging.DEBUG)
-    return app.load_app(conf)
+    return app.load_app(conf, args)

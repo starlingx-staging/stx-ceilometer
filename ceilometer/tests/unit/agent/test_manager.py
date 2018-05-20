@@ -114,7 +114,7 @@ class TestManager(base.BaseTestCase):
                 'airflow', 'cups', 'cpu_util', 'mem_util', 'io_util']
             calls = [mock.call(err_msg, 'hardware.ipmi.node.%s' % n)
                      for n in pollster_names]
-            LOG.exception.assert_has_calls(calls=calls, any_order=True)
+            LOG.error.assert_has_calls(calls=calls, any_order=True)
 
     # Skip loading pollster upon ImportError
     @mock.patch('ceilometer.ipmi.pollsters.node._Base.__init__',

@@ -13,6 +13,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 """Implementation of Inspector abstraction for libvirt."""
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 
 from lxml import etree
 from oslo_log import log as logging
@@ -119,7 +122,8 @@ class LibvirtInspector(virt_inspector.Inspector):
         for device in filter(
                 bool,
                 [target.get("dev")
-                 for target in tree.findall('devices/disk/target')]):
+                 for target in tree.findall('devices/disk/target')
+                 if target.getparent().find('source') is not None]):
             block_stats = domain.blockStats(device)
             yield virt_inspector.DiskStats(device=device,
                                            read_requests=block_stats[0],
@@ -133,27 +137,19 @@ class LibvirtInspector(virt_inspector.Inspector):
         domain = self._get_domain_not_shut_off_or_raise(instance)
         tree = etree.fromstring(domain.XMLDesc(0))
         for disk in tree.findall('devices/disk'):
-            disk_type = disk.get('type')
-            if disk_type:
-                if disk_type == 'network':
-                    LOG.warning(
-                        'Inspection disk usage of network disk '
-                        '%(instance_uuid)s unsupported by libvirt' % {
-                            'instance_uuid': instance.id})
-                    continue
-                # NOTE(lhx): "cdrom" device associated to the configdrive
-                # no longer has a "source" element. Releated bug:
-                # https://bugs.launchpad.net/ceilometer/+bug/1622718
-                if disk.find('source') is None:
-                    continue
-                target = disk.find('target')
-                device = target.get('dev')
-                if device:
-                    block_info = domain.blockInfo(device)
-                    yield virt_inspector.DiskInfo(device=device,
-                                                  capacity=block_info[0],
-                                                  allocation=block_info[1],
-                                                  physical=block_info[2])
+            # NOTE(lhx): "cdrom" device associated to the configdrive
+            # no longer has a "source" element. Releated bug:
+            # https://bugs.launchpad.net/ceilometer/+bug/1622718
+            if disk.find('source') is None:
+                continue
+            target = disk.find('target')
+            device = target.get('dev')
+            if device:
+                block_info = domain.blockInfo(device)
+                yield virt_inspector.DiskInfo(device=device,
+                                              capacity=block_info[0],
+                                              allocation=block_info[1],
+                                              physical=block_info[2])
 
     @libvirt_utils.raise_nodata_if_unsupported
     @libvirt_utils.retry_on_disconnect
@@ -172,6 +168,14 @@ class LibvirtInspector(virt_inspector.Inspector):
         if 'swap_in' in memory_stats and 'swap_out' in memory_stats:
             memory_swap_in = memory_stats['swap_in'] / units.Ki
             memory_swap_out = memory_stats['swap_out'] / units.Ki
+
+        # WRS - find out real number of active vcpus after VM scale up/down
+        # by counting number of unique host CPUs that have active vCPUs:
+        # Assumption: each vCPU can only map to one host CPU.
+        # e.g. [(True,False,False),(False,True,False)(True,False,False)] should
+        # return 2 active vcpus since vcpu2 shares a mapping with vcpu0
+        (__, cpumap) = domain.vcpus()
+        num_vcpu = len(set(cpumap))
 
         # TODO(sileht): stats also have the disk/vnic info
         # we could use that instead of the old method for Queen
@@ -199,6 +203,7 @@ class LibvirtInspector(virt_inspector.Inspector):
 
         return virt_inspector.InstanceStats(
             cpu_number=stats.get('vcpu.current'),
+            vcpu_number=num_vcpu,
             cpu_time=cpu_time,
             memory_usage=memory_used,
             memory_resident=memory_resident,

@@ -9,13 +9,23 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+#
+# Copyright (c) 2017 Wind River Systems, Inc.
+#
 
-import sqlalchemy as sa
+from sqlalchemy import BigInteger
+from sqlalchemy import Integer
+from sqlalchemy import MetaData
+from sqlalchemy import Table
 
 
-# Add index on metadata_hash column of resource
 def upgrade(migrate_engine):
-    meta = sa.MetaData(bind=migrate_engine)
-    resource = sa.Table('resource', meta, autoload=True)
-    index = sa.Index('ix_resource_metadata_hash', resource.c.metadata_hash)
-    index.create(bind=migrate_engine)
+    meta = MetaData(bind=migrate_engine)
+    resource = Table('sample', meta, autoload=True)
+    resource.c.id.alter(type=BigInteger)
+
+
+def downgrade(migrate_engine):
+    meta = MetaData(bind=migrate_engine)
+    resource = Table('sample', meta, autoload=True)
+    resource.c.id.alter(type=Integer)

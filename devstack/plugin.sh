@@ -199,11 +199,13 @@ function ceilometer_create_accounts {
 
 function install_gnocchi {
     echo_summary "Installing Gnocchi"
-    if [ $GNOCCHI_GIT_PATH ]; then
-        pip_install -e $GNOCCHI_GIT_PATH[redis,${DATABASE_TYPE},keystone] uwsgi
+    if python3_enabled; then
+        PY_VERS=${PYTHON3_VERSION}
     else
-        pip_install gnocchi[redis,${DATABASE_TYPE},keystone] uwsgi
+        PY_VERS=${PYTHON2_VERSION}
     fi
+    # workaround for upper-constraints.
+    sudo -H python${PY_VERS} -m pip install -U gnocchi[redis,${DATABASE_TYPE},keystone]
     recreate_database gnocchi
     sudo install -d -o $STACK_USER -m 755 $GNOCCHI_CONF_DIR
 
@@ -338,7 +340,6 @@ function configure_ceilometer {
         iniset $CEILOMETER_CONF coordination backend_url $CEILOMETER_COORDINATION_URL
         iniset $CEILOMETER_CONF notification workload_partitioning True
         iniset $CEILOMETER_CONF notification workers $API_WORKERS
-        iniset $CEILOMETER_CONF notification pipeline_processing_queues $API_WORKERS
     fi
 
     if [[ -n "$CEILOMETER_CACHE_BACKEND" ]]; then
@@ -443,7 +444,14 @@ function install_ceilometer {
     fi
 
     install_ceilometerclient
-    setup_develop $CEILOMETER_DIR
+
+    case $CEILOMETER_BACKEND in
+        mongodb) extra=mongo;;
+        gnocchi) extra=gnocchi;;
+        mysql) extra=mysql;;
+        postgresql) extra=postgresql;;
+    esac
+    setup_develop $CEILOMETER_DIR $extra
     sudo install -d -o $STACK_USER -m 755 $CEILOMETER_CONF_DIR
 }
 

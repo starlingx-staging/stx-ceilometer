@@ -206,6 +206,20 @@ class Connection(object):
         raise ceilometer.NotImplementedError('Meters not implemented')
 
     @staticmethod
+    def get_meter_types(user=None, project=None, resource=None, source=None,
+                        metaquery=None):
+        """Return an iterable of model.Meter instances.
+
+        Iterable items containing meter information.
+        :param user: Optional ID for user that owns the resource.
+        :param project: Optional ID for project that owns the resource.
+        :param resource: Optional resource filter.
+        :param source: Optional source filter.
+        :param metaquery: Optional dict with metadata to match on.
+        """
+        raise ceilometer.NotImplementedError('MeterTypes not implemented')
+
+    @staticmethod
     def get_samples(sample_filter, limit=None):
         """Return an iterable of model.Sample instances.
 

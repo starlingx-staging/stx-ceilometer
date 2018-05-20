@@ -107,11 +107,11 @@ class Resources(object):
         if self._resources:
             static_resources_group = self.agent_manager.construct_group_id(
                 utils.hash_of_set(self._resources))
-            if self.agent_manager.hashrings:
-                return [v for v in self._resources if
-                        self.agent_manager.hashrings[
-                            static_resources_group].belongs_to_self(
-                                six.text_type(v))] + source_discovery
+            return [v for v in self._resources if
+                    not self.agent_manager.partition_coordinator or
+                    self.agent_manager.hashrings[
+                        static_resources_group].belongs_to_self(
+                            six.text_type(v))] + source_discovery
 
         return source_discovery
 
@@ -206,6 +206,8 @@ class PollingTask(object):
                             self._send_notification([sample_dict])
 
                     if sample_batch:
+                        LOG.debug('Sending a batch of %d samples',
+                                  len(sample_batch))
                         self._send_notification(sample_batch)
 
                 except plugin_base.PollsterPermanentError as err:
@@ -280,14 +282,13 @@ class AgentManager(cotyledon.Service):
         self.discoveries = list(itertools.chain(*list(discoveries)))
         self.polling_periodics = None
 
+        self.hashrings = None
+        self.partition_coordinator = None
         if self.conf.coordination.backend_url:
             # XXX uuid4().bytes ought to work, but it requires ascii for now
             coordination_id = str(uuid.uuid4()).encode('ascii')
             self.partition_coordinator = coordination.get_coordinator(
                 self.conf.coordination.backend_url, coordination_id)
-            self.hashrings = None
-        else:
-            self.partition_coordinator = None
 
         # Compose coordination group prefix.
         # We'll use namespaces as the basement for this partitioning.
@@ -309,7 +310,7 @@ class AgentManager(cotyledon.Service):
             # Extension raising ExtensionLoadError can be ignored,
             # and ignore anything we can't import as a safety measure.
             if isinstance(exc, plugin_base.ExtensionLoadError):
-                LOG.exception("Skip loading extension for %s", ep.name)
+                LOG.error("Skip loading extension for %s", ep.name)
                 return
 
             show_exception = (LOG.isEnabledFor(logging.DEBUG)
@@ -389,6 +390,8 @@ class AgentManager(cotyledon.Service):
         # set shuffle time before polling task if necessary
         delay_polling_time = random.randint(
             0, self.conf.shuffle_time_before_polling_task)
+        LOG.info('Configuring polling tasks with initial polling delay of '
+                 '%d seconds', delay_polling_time)
 
         data = self.setup_polling_tasks()
 
@@ -515,7 +518,7 @@ class AgentManager(cotyledon.Service):
                 except Exception as err:
                     LOG.exception('Unable to discover resources: %s', err)
             else:
-                LOG.warning('Unknown discovery extension: %s', name)
+                LOG.debug('Unknown discovery extension: %s', name)
         return resources
 
     def stop_pollsters_tasks(self):

@@ -13,7 +13,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 import time
 
 import mock
@@ -29,10 +31,13 @@ class TestCPUPollster(base.TestPollsterBase):
     @mock.patch('ceilometer.pipeline.setup_pipeline', mock.MagicMock())
     def test_get_samples(self):
         self._mock_inspect_instance(
-            virt_inspector.InstanceStats(cpu_time=1 * (10 ** 6), cpu_number=2),
-            virt_inspector.InstanceStats(cpu_time=3 * (10 ** 6), cpu_number=2),
+            virt_inspector.InstanceStats(cpu_time=1 * (10 ** 6), cpu_number=2,
+                                         vcpu_number=2),
+            virt_inspector.InstanceStats(cpu_time=3 * (10 ** 6), cpu_number=2,
+                                         vcpu_number=2),
             # cpu_time resets on instance restart
-            virt_inspector.InstanceStats(cpu_time=2 * (10 ** 6), cpu_number=2),
+            virt_inspector.InstanceStats(cpu_time=2 * (10 ** 6), cpu_number=2,
+                                         vcpu_number=2),
         )
 
         mgr = manager.AgentManager(0, self.CONF)
@@ -45,6 +50,8 @@ class TestCPUPollster(base.TestPollsterBase):
             self.assertEqual(set(['cpu']), set([s.name for s in samples]))
             self.assertEqual(expected_time, samples[0].volume)
             self.assertEqual(2, samples[0].resource_metadata.get('cpu_number'))
+            self.assertEqual(2, samples[0].resource_metadata.
+                             get('vcpu_number'))
             # ensure elapsed time between polling cycles is non-zero
             time.sleep(0.001)
 

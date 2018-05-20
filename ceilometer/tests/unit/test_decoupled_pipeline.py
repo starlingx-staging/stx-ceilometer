@@ -12,7 +12,9 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-
+#
+# Copyright (c) 2013-2015 Wind River Systems, Inc.
+#
 import yaml
 
 from ceilometer import pipeline
@@ -218,42 +220,42 @@ class TestDecoupledPipeline(pipeline_base.BasePipelineTestCase):
     def test_rate_of_change_boilerplate_disk_read_cfg(self):
         meters = ('disk.read.bytes', 'disk.read.requests')
         units = ('B', 'request')
-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(3,
+        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
                                                                  meters,
                                                                  units)
 
     def test_rate_of_change_boilerplate_disk_write_cfg(self):
         meters = ('disk.write.bytes', 'disk.write.requests')
         units = ('B', 'request')
-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(3,
+        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
                                                                  meters,
                                                                  units)
 
     def test_rate_of_change_boilerplate_network_incoming_cfg(self):
         meters = ('network.incoming.bytes', 'network.incoming.packets')
         units = ('B', 'packet')
-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
+        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(5,
                                                                  meters,
                                                                  units)
 
     def test_rate_of_change_boilerplate_per_disk_device_read_cfg(self):
         meters = ('disk.device.read.bytes', 'disk.device.read.requests')
         units = ('B', 'request')
-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(3,
+        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
                                                                  meters,
                                                                  units)
 
     def test_rate_of_change_boilerplate_per_disk_device_write_cfg(self):
         meters = ('disk.device.write.bytes', 'disk.device.write.requests')
         units = ('B', 'request')
-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(3,
+        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
                                                                  meters,
                                                                  units)
 
     def test_rate_of_change_boilerplate_network_outgoing_cfg(self):
         meters = ('network.outgoing.bytes', 'network.outgoing.packets')
         units = ('B', 'packet')
-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
+        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(5,
                                                                  meters,
                                                                  units)
 

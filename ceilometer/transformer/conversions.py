@@ -129,9 +129,9 @@ class ScalingTransformer(BaseConversionTransformer):
                                                  **kwargs)
         self.scale = self.target.get('scale')
         self.max = self.target.get('max')
-        LOG.debug('scaling conversion transformer with source:'
-                  ' %(source)s target: %(target)s:', {'source': self.source,
-                                                      'target': self.target})
+        # LOG.debug('scaling conversion transformer with source:'
+        #          ' %(source)s target: %(target)s:', {'source': self.source,
+        #                                              'target': self.target})
 
     def _scale(self, s):
         """Apply the scaling factor.
@@ -183,7 +183,7 @@ class RateOfChangeTransformer(ScalingTransformer):
 
     def handle_sample(self, s):
         """Handle a sample, converting if necessary."""
-        LOG.debug('handling sample %s', s)
+        # LOG.debug('handling sample %s', s)
         key = s.name + s.resource_id
         prev = self.cache.get(key)
         timestamp = timeutils.parse_isotime(s.timestamp)
@@ -217,10 +217,10 @@ class RateOfChangeTransformer(ScalingTransformer):
                               if time_delta else 0.0)
 
             s = self._convert(s, rate_of_change)
-            LOG.debug('converted to: %s', s)
+            # LOG.debug('converted to: %s', s)
         else:
-            LOG.warning(_('dropping sample with no predecessor: %s'),
-                        (s,))
+            # LOG.warning(_('dropping sample with no predecessor: %s'),
+            #            (s,))
             s = None
         return s
 

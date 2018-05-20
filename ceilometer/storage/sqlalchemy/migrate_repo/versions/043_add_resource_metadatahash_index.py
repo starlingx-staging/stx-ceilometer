@@ -10,10 +10,15 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+# Perviously was 045_add_resource_metadatahash_index
+# Swapped due to conflict issue during ceilometer db upgrade
 
+import sqlalchemy as sa
+
+
+# Add index on metadata_hash column of resource
 def upgrade(migrate_engine):
-    # NOTE(gordc): this is a noop script to handle bug1468916
-    # previous lowering of id length will fail if db contains data longer.
-    # this skips migration for those failing. the next script will resize
-    # if this original migration passed.
-    pass
+    meta = sa.MetaData(bind=migrate_engine)
+    resource = sa.Table('resource', meta, autoload=True)
+    index = sa.Index('ix_resource_metadata_hash', resource.c.metadata_hash)
+    index.create(bind=migrate_engine)

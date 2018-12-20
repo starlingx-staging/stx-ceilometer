@@ -1,0 +1,51 @@
+From 657ecf497f393f8f68c6801f090d26997e693f59 Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Mon, 16 Jan 2017 11:34:25 -0500
+Subject: [PATCH 21/91] US103891: Pike Rebase. Run upgrade on fresh install
+
+Comment out the db version check, run upgrade on fresh install.
+
+Recover it after 045_add_unique_constraint_and_stored_proc be added into db models.
+---
+ ceilometer/storage/impl_sqlalchemy.py | 25 +++++++++++++------------
+ 1 file changed, 13 insertions(+), 12 deletions(-)
+
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index c7e76dd..fac59c3 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -431,18 +431,19 @@ class Connection(base.Connection):
+                             'sqlalchemy', 'migrate_repo')
+         engine = self._engine_facade.get_engine()
+ 
+-        from migrate import exceptions as migrate_exc
+-        from migrate.versioning import api
+-        from migrate.versioning import repository
+-
+-        repo = repository.Repository(path)
+-        try:
+-            api.db_version(engine, repo)
+-        except migrate_exc.DatabaseNotControlledError:
+-            models.Base.metadata.create_all(engine)
+-            api.version_control(engine, repo, repo.latest)
+-        else:
+-            migration.db_sync(engine, path)
++        # from migrate import exceptions as migrate_exc
++        # from migrate.versioning import api
++        # from migrate.versioning import repository
++
++        # repo = repository.Repository(path)
++        # try:
++        #     api.db_version(engine, repo)
++        # except migrate_exc.DatabaseNotControlledError:
++        #     models.Base.metadata.create_all(engine)
++        #     api.version_control(engine, repo, repo.latest)
++        # else:
++        #     migration.db_sync(engine, path)
++        migration.db_sync(engine, path)
+ 
+     def clear(self):
+         engine = self._engine_facade.get_engine()
+-- 
+2.7.4
+

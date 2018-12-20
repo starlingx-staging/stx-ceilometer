@@ -1,0 +1,39 @@
+From 8222cd861287406d0742a24352dda8173de1bdf8 Mon Sep 17 00:00:00 2001
+From: Matt Peters <matt.peters@windriver.com>
+Date: Sun, 25 Feb 2018 19:00:52 -0500
+Subject: [PATCH 83/91] CGTS-9028: AVS: PMD missed packet counter not collected
+ and reported via port stats
+
+The RX missed PMD counter is no longer recorded against the RX errors and
+therefore requires a separate counter to track the missed packets.
+---
+ ceilometer/vswitch/notifications.py | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/ceilometer/vswitch/notifications.py b/ceilometer/vswitch/notifications.py
+index 9532ba3..76cd1be 100644
+--- a/ceilometer/vswitch/notifications.py
++++ b/ceilometer/vswitch/notifications.py
+@@ -237,6 +237,19 @@ class Port(VSwitchNotificationBase):
+                 LOG.warning(_('An error occured while building %(m)s '
+                               'sample: %(e)s') % {'m': name, 'e': err})
+ 
++            name = 'vswitch.port.receive.missed'
++            try:
++                if long(metrics['rx-missed']) > 0:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_CUMULATIVE,
++                        unit='packet',
++                        volume=long(metrics['rx-missed']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
+             name = 'vswitch.port.transmit.errors'
+             try:
+                 if long(metrics['tx-errors']) > 0:
+-- 
+2.7.4
+

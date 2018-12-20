@@ -1,0 +1,39 @@
+From e24d4486960063931c4125ce047942514e891e1c Mon Sep 17 00:00:00 2001
+From: Alexander Chadin <a.chadin@servionica.ru>
+Date: Fri, 8 Sep 2017 14:12:19 +0300
+Subject: [PATCH 65/91] Add missing command of adding admin role to gnocchi
+
+Add command to add gnocchi user to service project with
+admin role.
+
+Change-Id: I856e8346244c0b87a1a849d60c6c02ecc1ec935b
+Closes-Bug: #1715855
+(cherry picked from commit d8818de30d3afc202c9c5bd23ebbc4ef16961e33)
+---
+ doc/source/install/install-base-prereq-common.inc | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/doc/source/install/install-base-prereq-common.inc b/doc/source/install/install-base-prereq-common.inc
+index debe072..c036d33 100644
+--- a/doc/source/install/install-base-prereq-common.inc
++++ b/doc/source/install/install-base-prereq-common.inc
+@@ -83,6 +83,16 @@
+         | type        | metric                           |
+         +-------------+----------------------------------+
+ 
++   * Add the ``admin`` role to the ``gnocchi`` user.
++
++     .. code-block:: console
++
++        $ openstack role add --project service --user gnocchi admin
++
++     .. note::
++
++        This command provides no output.
++
+    * Create the Metric service API endpoints:
+ 
+      .. code-block:: console
+-- 
+2.7.4
+

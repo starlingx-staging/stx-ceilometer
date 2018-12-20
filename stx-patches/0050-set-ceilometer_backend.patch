@@ -1,0 +1,74 @@
+From e0b7d487ac3579e0b79ae81b25e691548b652c5e Mon Sep 17 00:00:00 2001
+From: gord chung <gord@live.ca>
+Date: Mon, 30 Oct 2017 16:37:25 +0000
+Subject: [PATCH 50/91] set ceilometer_backend
+
+it's gone from devstack-gate.
+
+Change-Id: Ia93f7cd859b906d7a3e581af3fec689b24f7a5bc
+---
+ .../ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/run.yaml   | 3 ++-
+ playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/run.yaml       | 3 ++-
+ playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/run.yaml         | 2 ++
+ playbooks/legacy/grenade-dsvm-ceilometer/run.yaml                      | 2 ++
+ 4 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/run.yaml b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/run.yaml
+index 36f3164..bb90153 100644
+--- a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/run.yaml
++++ b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/run.yaml
+@@ -32,8 +32,9 @@
+           export DEVSTACK_GATE_TEMPEST=1
+           export DEVSTACK_GATE_TEMPEST_REGEX="^ceilometer\."
+           export DEVSTACK_GATE_TEMPEST_ALL_PLUGINS=1
+-          export DEVSTACK_GATE_CEILOMETER_BACKEND=mongodb
+           export DEVSTACK_LOCAL_CONFIG="enable_plugin ceilometer git://git.openstack.org/openstack/ceilometer"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"CEILOMETER_BACKEND=mongodb"
++
+           export BRANCH_OVERRIDE=default
+           if [ "$BRANCH_OVERRIDE" != "default" ] ; then
+               export OVERRIDE_ZUUL_BRANCH=$BRANCH_OVERRIDE
+diff --git a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/run.yaml b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/run.yaml
+index 3d0030e..744249c 100644
+--- a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/run.yaml
++++ b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/run.yaml
+@@ -32,8 +32,9 @@
+           export DEVSTACK_GATE_TEMPEST=1
+           export DEVSTACK_GATE_TEMPEST_REGEX="^ceilometer\."
+           export DEVSTACK_GATE_TEMPEST_ALL_PLUGINS=1
+-          export DEVSTACK_GATE_CEILOMETER_BACKEND=mongodb
+           export DEVSTACK_LOCAL_CONFIG="enable_plugin ceilometer git://git.openstack.org/openstack/ceilometer"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"CEILOMETER_BACKEND=mongodb"
++
+           export BRANCH_OVERRIDE=default
+           if [ "$BRANCH_OVERRIDE" != "default" ] ; then
+               export OVERRIDE_ZUUL_BRANCH=$BRANCH_OVERRIDE
+diff --git a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/run.yaml b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/run.yaml
+index 9433c9a..89983a0 100644
+--- a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/run.yaml
++++ b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/run.yaml
+@@ -34,6 +34,8 @@
+           export DEVSTACK_GATE_TEMPEST_ALL_PLUGINS=1
+           export DEVSTACK_GATE_CEILOMETER_BACKEND=mysql
+           export DEVSTACK_LOCAL_CONFIG="enable_plugin ceilometer git://git.openstack.org/openstack/ceilometer"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"CEILOMETER_BACKEND=mysql"
++
+           export BRANCH_OVERRIDE=default
+           if [ "$BRANCH_OVERRIDE" != "default" ] ; then
+               export OVERRIDE_ZUUL_BRANCH=$BRANCH_OVERRIDE
+diff --git a/playbooks/legacy/grenade-dsvm-ceilometer/run.yaml b/playbooks/legacy/grenade-dsvm-ceilometer/run.yaml
+index e513564..71b80a2 100644
+--- a/playbooks/legacy/grenade-dsvm-ceilometer/run.yaml
++++ b/playbooks/legacy/grenade-dsvm-ceilometer/run.yaml
+@@ -36,6 +36,8 @@
+               export OVERRIDE_ZUUL_BRANCH=$BRANCH_OVERRIDE
+           fi
+           export GRENADE_PLUGINRC="enable_grenade_plugin ceilometer https://git.openstack.org/openstack/ceilometer"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"CEILOMETER_BACKEND=mysql"
++
+           cp devstack-gate/devstack-vm-gate-wrap.sh ./safe-devstack-vm-gate-wrap.sh
+           ./safe-devstack-vm-gate-wrap.sh
+         executable: /bin/bash
+-- 
+2.7.4
+

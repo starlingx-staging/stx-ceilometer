@@ -1,0 +1,421 @@
+From cc9a5ca8e40b45d22a8ba4f3bfb5faa80faf33d2 Mon Sep 17 00:00:00 2001
+From: gord chung <gord@live.ca>
+Date: Wed, 6 Dec 2017 23:27:45 +0000
+Subject: [PATCH 69/91] partial clean up of contributor install info
+
+- remove duplication of install-guide steps
+- create a page for installing with devstack and integrating
+with other telemetry services.
+
+Change-Id: I697ea46bcb0db02fdb561f0161e22411e23679c7
+(cherry picked from commit a386af9628e116ed59281c5b04f72a290c671d0e)
+---
+ doc/source/contributor/devstack.rst            |  37 ++++
+ doc/source/contributor/index.rst               |   1 +
+ doc/source/contributor/install/development.rst |  57 ------
+ doc/source/contributor/install/index.rst       |   2 -
+ doc/source/contributor/install/manual.rst      | 261 -------------------------
+ 5 files changed, 38 insertions(+), 320 deletions(-)
+ create mode 100644 doc/source/contributor/devstack.rst
+ delete mode 100644 doc/source/contributor/install/development.rst
+ delete mode 100644 doc/source/contributor/install/manual.rst
+
+diff --git a/doc/source/contributor/devstack.rst b/doc/source/contributor/devstack.rst
+new file mode 100644
+index 0000000..fd05763
+--- /dev/null
++++ b/doc/source/contributor/devstack.rst
+@@ -0,0 +1,37 @@
++===============================
++ Installing development sandbox
++===============================
++
++In a development environment created by devstack_, Ceilometer can be tested
++alongside other OpenStack services.
++
++Configuring devstack
++====================
++
++1. Download devstack_.
++
++2. Create a ``local.conf`` file as input to devstack.
++
++3. The ceilometer services are not enabled by default, so they must be
++   enabled in ``local.conf`` but adding the following::
++
++     # Enable the Ceilometer devstack plugin
++     enable_plugin ceilometer https://git.openstack.org/openstack/ceilometer.git
++
++   By default, all ceilometer services except for ceilometer-ipmi agent will
++   be enabled
++
++4. Enable Gnocchi storage support by including the following in ``local.conf``::
++
++     CEILOMETER_BACKEND=gnocchi
++
++   Optionally, services which extend Ceilometer can be enabled::
++
++     enable_plugin aodh https://git.openstack.org/openstack/aodh
++     enable_plugin panko https://git.openstack.org/openstack/panko
++
++   These plugins should be added before ceilometer.
++
++5. ``./stack.sh``
++
++.. _devstack: https://docs.openstack.org/devstack/latest/
+diff --git a/doc/source/contributor/index.rst b/doc/source/contributor/index.rst
+index 78f78c3..80671e9 100644
+--- a/doc/source/contributor/index.rst
++++ b/doc/source/contributor/index.rst
+@@ -32,5 +32,6 @@ Developer reference
+    configuration
+    plugins
+    new_resource_types
++   devstack
+    testing
+    gmr
+diff --git a/doc/source/contributor/install/development.rst b/doc/source/contributor/install/development.rst
+deleted file mode 100644
+index 5b6bcaa..0000000
+--- a/doc/source/contributor/install/development.rst
++++ /dev/null
+@@ -1,57 +0,0 @@
+-..
+-      Copyright 2012 Nicolas Barcet for Canonical
+-                2013 New Dream Network, LLC (DreamHost)
+-
+-      Licensed under the Apache License, Version 2.0 (the "License"); you may
+-      not use this file except in compliance with the License. You may obtain
+-      a copy of the License at
+-
+-          http://www.apache.org/licenses/LICENSE-2.0
+-
+-      Unless required by applicable law or agreed to in writing, software
+-      distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+-      WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+-      License for the specific language governing permissions and limitations
+-      under the License.
+-
+-===============================
+- Installing development sandbox
+-===============================
+-
+-Ceilometer has several daemons. The basic are: :term:`polling agent` running
+-either on the Nova compute node(s) or :term:`polling agent` running on the
+-central management node(s), :term:`notification agent` running on the cloud's
+-management node(s).
+-
+-In a development environment created by devstack_, these services are
+-typically running on the same server.
+-
+-
+-Configuring devstack
+-====================
+-
+-.. index::
+-   double: installing; devstack
+-
+-1. Download devstack_.
+-
+-2. Create a ``local.conf`` file as input to devstack.
+-
+-3. Ceilometer makes extensive use of the messaging bus, but has not
+-   yet been tested with ZeroMQ. We recommend using Rabbit for
+-   now. By default, RabbitMQ will be used by devstack.
+-
+-4. The ceilometer services are not enabled by default, so they must be
+-   enabled in ``local.conf`` before running ``stack.sh``.
+-
+-   This example ``local.conf`` file shows all of the settings required for
+-   ceilometer::
+-
+-      [[local|localrc]]
+-      # Enable the Ceilometer devstack plugin
+-      enable_plugin ceilometer https://git.openstack.org/openstack/ceilometer.git
+-
+-   By default, all ceilometer services except for ceilometer-ipmi agent will
+-   be enabled
+-
+-.. _devstack: http://www.devstack.org/
+diff --git a/doc/source/contributor/install/index.rst b/doc/source/contributor/install/index.rst
+index d106198..35e7dba 100644
+--- a/doc/source/contributor/install/index.rst
++++ b/doc/source/contributor/install/index.rst
+@@ -23,7 +23,5 @@
+    :maxdepth: 2
+ 
+    dbreco
+-   development
+-   manual
+    custom
+    upgrade
+diff --git a/doc/source/contributor/install/manual.rst b/doc/source/contributor/install/manual.rst
+deleted file mode 100644
+index 3202b59..0000000
+--- a/doc/source/contributor/install/manual.rst
++++ /dev/null
+@@ -1,261 +0,0 @@
+-..
+-      Copyright 2012 Nicolas Barcet for Canonical
+-                2013 New Dream Network, LLC (DreamHost)
+-
+-      Licensed under the Apache License, Version 2.0 (the "License"); you may
+-      not use this file except in compliance with the License. You may obtain
+-      a copy of the License at
+-
+-          http://www.apache.org/licenses/LICENSE-2.0
+-
+-      Unless required by applicable law or agreed to in writing, software
+-      distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+-      WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+-      License for the specific language governing permissions and limitations
+-      under the License.
+-
+-.. _installing_manually:
+-
+-=====================
+- Installing Manually
+-=====================
+-
+-.. note::
+-
+-   Ceilometer collector service is deprecated. Configure dispatchers under publisher
+-   in pipeline to push data instead. For more details about how to configure
+-   publishers in the :ref:`publisher-configuration`.
+-
+-Storage Backend Installation
+-============================
+-
+-
+-Gnocchi
+--------
+-
+-#. Follow `Gnocchi installation`_ instructions
+-
+-#. Edit `/etc/ceilometer/ceilometer.conf` for the collector service:
+-
+-   * With Keystone authentication enabled::
+-
+-       [dispatcher_gnocchi]
+-       filter_service_activity = False # Enable if using swift backend
+-       filter_project = <project name associated with gnocchi user> # if using swift backend
+-
+-       [service_credentials]
+-       auth_url = <auth_url>:5000
+-       region_name = RegionOne
+-       password = password
+-       username = ceilometer
+-       project_name = service
+-       project_domain_id = default
+-       user_domain_id = default
+-       auth_type = password
+-
+-   * In somes cases, it is possible to disable keystone authentication for
+-     Gnocchi to remove the overhead of token creation/verification when request
+-     authentication doesn't matter. This will increase the performance of
+-     Gnocchi::
+-
+-       [dispatcher_gnocchi]
+-       filter_service_activity = False # Enable if using swift backend
+-       filter_project = <project name associated with gnocchi user> # if using swift backend
+-       auth_section=service_credentials_gnocchi
+-
+-       [service_credentials_gnocchi]
+-       auth_type=gnocchi-noauth
+-       roles = admin
+-       user_id = <ceilometer_user_id>
+-       project_id = <ceilometer_project_id>
+-       endpoint = <gnocchi_endpoint>
+-
+-#. Copy gnocchi_resources.yaml to config directory (e.g./etc/ceilometer)
+-
+-#. Initialize Gnocchi database by creating ceilometer resources::
+-
+-   ceilometer-upgrade --skip-metering-database
+-
+-#. To minimize data requests, caching and batch processing should be enabled:
+-
+-   1. Enable resource caching (oslo.cache_ should be installed)::
+-
+-        [cache]
+-        backend_argument = redis_expiration_time:600
+-        backend_argument = db:0
+-        backend_argument = distributed_lock:True
+-        backend_argument = url:redis://localhost:6379
+-        backend = dogpile.cache.redis
+-
+-   2. Enable batch processing::
+-
+-        [notification]
+-        batch_size = 100
+-        batch_timeout = 5
+-
+-#. Start notification service
+-
+-.. _oslo.cache: https://docs.openstack.org/oslo.cache/latest/configuration/index.html
+-.. _`Gnocchi installation`: http://gnocchi.xyz/install.html
+-
+-
+-Installing the notification agent
+-=================================
+-
+-.. index::
+-   double: installing; agent-notification
+-
+-1. Clone the ceilometer git repository to the management server::
+-
+-   $ cd /opt/stack
+-   $ git clone https://git.openstack.org/openstack/ceilometer.git
+-
+-2. As a user with ``root`` permissions or ``sudo`` privileges, run the
+-   ceilometer installer::
+-
+-   $ cd ceilometer
+-   $ sudo python setup.py install
+-
+-3. Generate configuration file::
+-
+-   $ tox -egenconfig
+-
+-4. Copy the sample configuration files from the source tree
+-   to their final location::
+-
+-   $ mkdir -p /etc/ceilometer
+-   $ cp etc/ceilometer/ceilometer.conf /etc/ceilometer
+-   $ cp ceilometer/pipeline/data/*.yaml /etc/ceilometer
+-
+-5. Edit ``/etc/ceilometer/ceilometer.conf``
+-
+-   1. Configure messaging::
+-
+-        [oslo_messaging_notifications]
+-        topics = notifications
+-
+-        [oslo_messaging_rabbit]
+-        rabbit_userid = stackrabbit
+-        rabbit_password = openstack1
+-        rabbit_hosts = 10.0.2.15
+-
+-   2. Set the ``telemetry_secret`` value.
+-
+-      Set the ``telemetry_secret`` value to a large, random, value. Use
+-      the same value in all ceilometer configuration files, on all
+-      nodes, so that messages passing between the nodes can be
+-      validated. This value can be left empty to disable message signing.
+-
+-      .. note::
+-
+-         Disabling signing will improve message handling performance
+-
+-   Refer to :doc:`/configuration` for details about any other options
+-   you might want to modify before starting the service.
+-
+-6. Edit ``/etc/ceilometer/ceilometer.conf``:
+-
+-   Change publisher endpoints to expected targets. By default, it pushes to a
+-   `metering.sample` topic on the oslo.messaging queue. Available publishers
+-   are listed in :ref:`pipeline-publishers` section.
+-
+-5. Start the notification daemon::
+-
+-     $ ceilometer-agent-notification
+-
+-   .. note::
+-
+-      The default development configuration of the notification logs to
+-      stderr, so you may want to run this step using a screen session
+-      or other tool for maintaining a long-running program in the
+-      background.
+-
+-
+-Installing the Polling Agent
+-============================
+-
+-.. index::
+-   double: installing; agent
+-
+-.. note::
+-
+-   The polling agent needs to be able to talk to Keystone and any of
+-   the services being polled for updates. It also needs to run on your compute
+-   nodes to poll instances.
+-
+-1. Clone the ceilometer git repository to the server::
+-
+-   $ cd /opt/stack
+-   $ git clone https://git.openstack.org/openstack/ceilometer.git
+-
+-2. As a user with ``root`` permissions or ``sudo`` privileges, run the
+-   ceilometer installer::
+-
+-   $ cd ceilometer
+-   $ sudo python setup.py install
+-
+-3. Generate configuration file::
+-
+-   $ tox -egenconfig
+-
+-4. Copy the sample configuration files from the source tree
+-   to their final location::
+-
+-   $ mkdir -p /etc/ceilometer
+-   $ cp etc/ceilometer/ceilometer.conf /etc/ceilometer/ceilometer.conf
+-   $ cp ceilometer/pipeline/data/*.yaml /etc/ceilometer
+-
+-5. Configure messaging by editing ``/etc/ceilometer/ceilometer.conf``::
+-
+-     [oslo_messaging_rabbit]
+-     rabbit_userid = stackrabbit
+-     rabbit_password = openstack1
+-     rabbit_hosts = 10.0.2.15
+-
+-6. In order to retrieve object store statistics, ceilometer needs
+-   access to swift with ``ResellerAdmin`` role. You should give this
+-   role to your ``os_username`` user for tenant ``os_tenant_name``::
+-
+-     $ openstack role create ResellerAdmin
+-     +-----------+----------------------------------+
+-     | Field     | Value                            |
+-     +-----------+----------------------------------+
+-     | domain_id | None                             |
+-     | id        | f5153dae801244e8bb4948f0a6fb73b7 |
+-     | name      | ResellerAdmin                    |
+-     +-----------+----------------------------------+
+-
+-     $ openstack role add f5153dae801244e8bb4948f0a6fb73b7 \
+-                          --project $SERVICE_TENANT \
+-                          --user $CEILOMETER_USER
+-
+-7. Start the agent::
+-
+-   $ ceilometer-polling
+-
+-8. By default, the polling agent polls the `compute` and `central` namespaces.
+-   You can specify which namespace to poll in the `ceilometer.conf`
+-   configuration file or on the command line::
+-
+-     $ ceilometer-polling --polling-namespaces central,ipmi
+-
+-
+-Installing the API Server
+-=========================
+-
+-.. index::
+-   double: installing; API
+-
+-.. note::
+-
+-   The Ceilometer's API service is no longer supported. Data storage should be
+-   handled by a separate service such as Gnocchi.
+-
+-
+-Enabling Service Notifications
+-==============================
+-
+-See the `install guide`_ for instructions on how to enable meters for specific
+-OpenStack services.
+-
+-.. _`install guide`: https://docs.openstack.org/project-install-guide/telemetry/draft/install-controller.html
+-- 
+2.7.4
+

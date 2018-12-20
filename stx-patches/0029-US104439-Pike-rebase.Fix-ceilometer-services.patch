@@ -1,0 +1,222 @@
+From 100b3d593a206e4680fa322cf95894d9db07b7fa Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Tue, 7 Nov 2017 00:10:08 -0500
+Subject: [PATCH 29/91] US104439: Pike rebase.Fix ceilometer services
+
+---
+ ceilometer/api/ceilometer-api.py       |  2 +-
+ ceilometer/cmd/agent_notification.py   |  7 ++++++-
+ ceilometer/meter/notifications.py      |  7 +------
+ ceilometer/pipeline.py                 |  6 ------
+ ceilometer/pipeline/data/pipeline.yaml | 12 ++++++------
+ ceilometer/publisher/csvfile.py        | 13 ++++++++-----
+ etc/ceilometer/controller.yaml         | 10 +++++-----
+ 7 files changed, 27 insertions(+), 30 deletions(-)
+
+diff --git a/ceilometer/api/ceilometer-api.py b/ceilometer/api/ceilometer-api.py
+index 4a5f655..e83c4a9 100644
+--- a/ceilometer/api/ceilometer-api.py
++++ b/ceilometer/api/ceilometer-api.py
+@@ -7,4 +7,4 @@ args = {
+     'config_file': 'etc/ceilometer/ceilometer.conf',
+     'pipeline_cfg_file':
+     '/opt/cgcs/ceilometer/' + str(SW_VERSION) + '/pipeline.yaml', }
+-application = build_wsgi_app.build_wsgi_app(args)
++application = build_wsgi_app.build_wsgi_app(args=args)
+diff --git a/ceilometer/cmd/agent_notification.py b/ceilometer/cmd/agent_notification.py
+index 3cdfc47..bd10bc9 100644
+--- a/ceilometer/cmd/agent_notification.py
++++ b/ceilometer/cmd/agent_notification.py
+@@ -18,11 +18,16 @@ import cotyledon
+ from cotyledon import oslo_config_glue
+ 
+ from ceilometer import notification
++from ceilometer import pipeline
+ from ceilometer import service
+ 
++from oslo_config import cfg
++
+ 
+ def main():
+-    conf = service.prepare_service()
++    conf = cfg.ConfigOpts()
++    conf.register_cli_opts(pipeline.OPTS)
++    service.prepare_service(conf=conf)
+ 
+     sm = cotyledon.ServiceManager()
+     sm.add(notification.NotificationService,
+diff --git a/ceilometer/meter/notifications.py b/ceilometer/meter/notifications.py
+index d55c148..b474ebb 100644
+--- a/ceilometer/meter/notifications.py
++++ b/ceilometer/meter/notifications.py
+@@ -38,12 +38,7 @@ OPTS = [
+                     "according to the parameter."
+                ),
+     cfg.MultiStrOpt('meter_definitions_dirs',
+-                    default=["/etc/ceilometer/meters.d",
+-                             os.path.abspath(
+-                                 os.path.join(
+-                                     os.path.split(
+-                                         os.path.dirname(__file__))[0],
+-                                     "data", "meters.d"))],
++                    default=["/etc/ceilometer/meters.d"],
+                     help="List directory to find files of "
+                          "defining meter notifications."
+                     ),
+diff --git a/ceilometer/pipeline.py b/ceilometer/pipeline.py
+index eb1f7c6..dbb5469 100644
+--- a/ceilometer/pipeline.py
++++ b/ceilometer/pipeline.py
+@@ -47,12 +47,6 @@ OPTS = [
+ ]
+ 
+ 
+-# WRS: refer to oslo-config openstack bug: 1363808
+-# register_cli_opts must come before register_opts
+-conf = cfg.ConfigOpts()
+-conf.register_cli_opts(OPTS)
+-
+-
+ LOG = log.getLogger(__name__)
+ 
+ 
+diff --git a/ceilometer/pipeline/data/pipeline.yaml b/ceilometer/pipeline/data/pipeline.yaml
+index bb259b7..173643f 100644
+--- a/ceilometer/pipeline/data/pipeline.yaml
++++ b/ceilometer/pipeline/data/pipeline.yaml
+@@ -35,7 +35,7 @@ sinks:
+     - name: meter_sink
+       transformers:
+       publishers:
+-          - gnocchi://
++          - notifier://
+     - name: cpu_sink
+       transformers:
+           - name: "rate_of_change"
+@@ -47,7 +47,7 @@ sinks:
+                     max: 100
+                     scale: "100.0 / (10**9 * (resource_metadata.cpu_number or 1))"
+       publishers:
+-          - gnocchi://
++          - notifier://
+     - name: cpu_delta_sink
+       transformers:
+           - name: "delta"
+@@ -56,7 +56,7 @@ sinks:
+                     name: "cpu.delta"
+                 growth_only: True
+       publishers:
+-          - gnocchi://
++          - notifier://
+     - name: vcpu_sink
+       transformers:
+           - name: "rate_of_change"
+@@ -68,7 +68,7 @@ sinks:
+                     max: 100
+                     scale: "100.0 / (10**9 * (resource_metadata.vcpu_number or 1))"
+       publishers:
+-          - gnocchi://
++          - notifier://
+     - name: disk_sink
+       transformers:
+           - name: "rate_of_change"
+@@ -83,7 +83,7 @@ sinks:
+                         unit: "\\1/s"
+                     type: "gauge"
+       publishers:
+-          - gnocchi://
++          - notifier://
+     - name: network_sink
+       transformers:
+           - name: "rate_of_change"
+@@ -98,4 +98,4 @@ sinks:
+                         unit: "\\1/s"
+                     type: "gauge"
+       publishers:
+-          - gnocchi://
++          - notifier://
+diff --git a/ceilometer/publisher/csvfile.py b/ceilometer/publisher/csvfile.py
+index 65bad47..75cb795 100644
+--- a/ceilometer/publisher/csvfile.py
++++ b/ceilometer/publisher/csvfile.py
+@@ -179,7 +179,7 @@ class CompressingRotatingFileHandler(logging.handlers.RotatingFileHandler):
+         self.stream = None
+ 
+ 
+-class CSVFilePublisher(publisher.PublisherBase):
++class CSVFilePublisher(publisher.ConfigPublisherBase):
+     """Publisher metering data to file.
+ 
+     Based on FilePublisher (copyright license included at top of this file)
+@@ -240,12 +240,15 @@ class CSVFilePublisher(publisher.PublisherBase):
+         if not self.location or self.location.lower() == 'csvfile':
+             LOG.error('The path for the csvfile publisher is required')
+             return
+-        if self.conf.csv_location_strict:
++        if self.conf.publisher_csvfile.csv_location_strict:
+             # Eliminate "../" in the location
+             self.location = os.path.abspath(self.location)
+-            if not self.location.startswith(self.conf.csv_location):
+-                LOG.error('The location %s for the csvfile must start with %s'
+-                          % (self.location, self.conf.csv_location))
++            if (not self.location.startswith(
++               self.conf.publisher_csvfile.csv_location)):
++                LOG.error(
++                    'The location %s for the csvfile must start with %s'
++                    % (self.location, self.conf.publisher_csvfile.csv_location)
++                )
+                 return
+ 
+         # Handling other configuration options in the query string
+diff --git a/etc/ceilometer/controller.yaml b/etc/ceilometer/controller.yaml
+index 64fffd2..4dc37ca 100644
+--- a/etc/ceilometer/controller.yaml
++++ b/etc/ceilometer/controller.yaml
+@@ -38,7 +38,7 @@ sinks:
+     - name: meter_sink
+       transformers:
+       publishers:
+-          - gnocchi://
++          - notifier://
+     - name: cpu_sink
+       transformers:
+           - name: "rate_of_change"
+@@ -50,7 +50,7 @@ sinks:
+                     max: 100
+                     scale: "100.0 / (10**9 * (resource_metadata.cpu_number or 1))"
+       publishers:
+-          - gnocchi://
++          - notifier://
+     - name: vcpu_sink
+       transformers:
+           - name: "rate_of_change"
+@@ -62,7 +62,7 @@ sinks:
+                     max: 100
+                     scale: "100.0 / (10**9 * (resource_metadata.vcpu_number or 1))"
+       publishers:
+-          - gnocchi://
++          - notifier://
+     - name: disk_sink
+       transformers:
+           - name: "rate_of_change"
+@@ -77,7 +77,7 @@ sinks:
+                         unit: "\\1/s"
+                     type: "gauge"
+       publishers:
+-          - gnocchi://
++          - notifier://
+     - name: network_sink
+       transformers:
+           - name: "rate_of_change"
+@@ -92,7 +92,7 @@ sinks:
+                         unit: "\\1/s"
+                     type: "gauge"
+       publishers:
+-          - gnocchi://
++          - notifier://
+     - name: csv_sink
+       publishers:
+           - csvfile:///opt/cgcs/ceilometer/csv/pm.csv?max_bytes=10000000&backup_count=5&compress=True&enabled=True
+-- 
+2.7.4
+

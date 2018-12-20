@@ -1,0 +1,463 @@
+From e4bae13bc605a9b71c238c0757937892656238ef Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Thu, 12 Jan 2017 10:00:35 -0500
+Subject: [PATCH 10/91] US103891: Pike Rebase. Feature: csvfile pipeline
+ controller and extensions handling
+
+This squash includes the following commits:
+
+1. Rebase. Mitaka. Port csv file pipeline controller
+commit: b0a2fd5f827
+
+2. Rebase. Mitaka. Port handling of extensions feature
+commit: 4baeed582bb
+
+3. Rebase. Mitaka. Port fix wrs-piplines
+commit: e92b680cdb0
+
+4. Rebase. Mitaka. Port reload pipeline manager
+commit: 0170dece22d
+
+5. US80977: Mitaka rebase fix
+commit: 8ae837d5be3
+
+This change fixes bugzilla #77 - Fail to update ceilometer pipeline info.
+Root cause: TiS pipelines porting error
+---
+ ceilometer/api/controllers/v2/extensions.py |  90 +++++++++
+ ceilometer/api/controllers/v2/pipelines.py  | 288 ++++++++++++++++++++++++++++
+ ceilometer/api/controllers/v2/root.py       |  11 ++
+ 3 files changed, 389 insertions(+)
+ create mode 100644 ceilometer/api/controllers/v2/extensions.py
+ create mode 100644 ceilometer/api/controllers/v2/pipelines.py
+
+diff --git a/ceilometer/api/controllers/v2/extensions.py b/ceilometer/api/controllers/v2/extensions.py
+new file mode 100644
+index 0000000..c8d59c7
+--- /dev/null
++++ b/ceilometer/api/controllers/v2/extensions.py
+@@ -0,0 +1,90 @@
++#
++# Copyright 2012 New Dream Network, LLC (DreamHost)
++#
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
++from pecan import rest
++from wsme import types as wtypes
++import wsmeext.pecan as wsme_pecan
++
++from ceilometer.api.controllers.v2 import base
++
++
++class Extension(base.Base):
++    """A representation of the extension."""
++
++    namespace = wtypes.text
++    "namespace of extension"
++
++    name = wtypes.text
++    "name of extension"
++
++    description = wtypes.text
++    "description of extension"
++
++    updated = wtypes.text
++    "updated time of extension"
++
++    alias = wtypes.text
++    "alias of extension"
++
++    links = [wtypes.text]
++    "links of extension"
++
++    @classmethod
++    def from_db_model(cls, m):
++        return cls(namespace=m['namespace'],
++                   name=m['name'],
++                   description=m['description'],
++                   updated=m['updated'],
++                   alias=m['alias'],
++                   links=m['links'])
++
++
++class ExtensionList(base.Base):
++    """A representation of extensions."""
++
++    extensions = [Extension]
++    "list of extensions"
++
++    @classmethod
++    def from_db_model(cls, m):
++        return cls(extensions=m)
++
++
++class ExtensionsController(rest.RestController):
++    """Manages extensions queries."""
++
++    @wsme_pecan.wsexpose(ExtensionList)
++    def get(self):
++        ext_data = {}
++        ext_data['namespace'] = ("http://docs.windriver.com/tis/ext/"
++                                 "pipelines/v1")
++        ext_data['name'] = "pipelines"
++        ext_data['description'] = ("Windriver Telemetry Pipelines"
++                                   " for managing the writing of"
++                                   " Ceilometer PMs to a"
++                                   " Comma-Separated-Value file.")
++        ext_data['updated'] = "2014-10-01T12:00:00-00:00"
++        ext_data['alias'] = "wrs-pipelines"
++        ext_data['links'] = []
++        ext = Extension.from_db_model(ext_data)
++        ext_list = []
++        ext_list.append(ext)
++        return ExtensionList.from_db_model(ext_list)
+diff --git a/ceilometer/api/controllers/v2/pipelines.py b/ceilometer/api/controllers/v2/pipelines.py
+new file mode 100644
+index 0000000..fff3c1f
+--- /dev/null
++++ b/ceilometer/api/controllers/v2/pipelines.py
+@@ -0,0 +1,288 @@
++#
++# Copyright 2012 New Dream Network, LLC (DreamHost)
++#
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
++from ceilometer.api.controllers.v2 import base
++from ceilometer.i18n import _
++from ceilometer import pipeline as pipeline_t
++from ceilometer.publisher import csvfile
++import os
++from oslo_config import cfg
++from oslo_log import log
++import pecan
++from pecan import rest
++from stevedore import extension
++import subprocess
++import wsme
++from wsme import types as wtypes
++import wsmeext.pecan as wsme_pecan
++import yaml
++
++LOG = log.getLogger(__name__)
++
++P_TYPE = {
++    'pipeline': pipeline_t.SamplePipeline,
++    'source': pipeline_t.SampleSource,
++    'sink': pipeline_t.SampleSink
++}
++
++
++class Pipeline(base.Base):
++    """An externally defined object for pipeline. Corresponds to a SINK
++
++    """
++
++    name = wtypes.text
++    enabled = bool
++    location = wtypes.text
++    max_bytes = int
++    backup_count = int
++    compress = bool
++
++    "The unique name for the pipeline"
++
++    def __init__(self, rule=None, **kwargs):
++        super(Pipeline, self).__init__(**kwargs)
++
++    def __repr__(self):
++        # for logging calls
++        return "Pipeline Sink(%s)" % self.name
++
++    @staticmethod
++    def validate(pipeline):
++        valid_fields = ['name',
++                        'enabled',
++                        'location',
++                        'max_bytes',
++                        'backup_count',
++                        'compress']
++        for field in valid_fields:
++            if getattr(pipeline, field) is None:
++                error = _("%s is mandatory") % field
++                pecan.response.translatable_error = error
++                raise wsme.exc.ClientSideError(unicode(error))
++
++        if cfg.CONF.csv_location_strict:
++            # Use abspath to expand sneaky things like ../ in the path
++            loc_val = os.path.abspath(getattr(pipeline, 'location'))
++            if not loc_val.startswith(cfg.CONF.csv_location):
++                fmt = _("%s violates the location constraint in config")
++                error = fmt % loc_val
++                pecan.response.translatable_error = error
++                raise wsme.exc.ClientSideError(unicode(error))
++
++        # we cannot have negative values for max_bytes
++        if getattr(pipeline, 'max_bytes') < 0:
++            error = _("max_bytes must be >= 0.")
++            pecan.response.translatable_error = error
++            raise wsme.exc.ClientSideError(unicode(error))
++
++        return pipeline
++
++    @classmethod
++    def from_dict(cls, some_dict):
++        return cls(**(some_dict))
++
++    @classmethod
++    def sample(cls):
++        return cls(name='Sample')
++
++
++class PipelinesController(rest.RestController):
++    """Works on pipelines.
++
++         Caveat: we do not support MULTIPLE CSV per sink
++    """
++
++    def format_as_dict(self, sink, csvpublisher):
++        some_dict = {}
++        some_dict['name'] = sink.name
++        some_dict['enabled'] = csvpublisher.is_enabled
++        some_dict['location'] = csvpublisher.location
++        some_dict['max_bytes'] = csvpublisher.max_bytes
++        some_dict['backup_count'] = csvpublisher.backup_count
++        some_dict['compress'] = csvpublisher.compress
++        return some_dict
++
++    def get_pipelines_from_manager(self):
++        pipeline_cfg = {}
++        pipelines = pecan.request.pipeline_manager.pipelines
++        for p in pipelines:
++            for pb in p.sink.publishers:
++                if isinstance(pb, csvfile.CSVFilePublisher):
++                    # If it is the same sink, we can just overwrite it
++                    pipeline_cfg[p.sink.name] = self.format_as_dict(p.sink, pb)
++        return pipeline_cfg.values()
++
++    def get_pipelines_from_cfg(self, cfg):
++        # This code is based on the constructor in pipeline.py
++        transformer_manager = extension.ExtensionManager(
++            'ceilometer.transformer')
++        new_pipelines = []
++        if 'sources' in cfg or 'sinks' in cfg:
++            if not ('sources' in cfg and 'sinks' in cfg):
++                raise pipeline_t.PipelineException(
++                    "Both sources & sinks are required", cfg)
++            sources = [P_TYPE['source'](s) for s in cfg.get('sources', [])]
++            sinks = dict((s['name'], P_TYPE['sink'](s, transformer_manager))
++                         for s in cfg.get('sinks', []))
++            for source in sources:
++                source.check_sinks(sinks)
++                for target in source.sinks:
++                    new_pipelines.append(
++                        P_TYPE['pipeline'](source, sinks[target]))
++        else:
++            for pipedef in cfg:
++                source = P_TYPE['source'](pipedef)
++                sink = P_TYPE['sink'](pipedef, transformer_manager)
++                new_pipelines.append(P_TYPE['pipeline'](source, sink))
++        return new_pipelines
++
++    def get_pipelines_from_yaml(self):
++        pipeline_cfg = {}
++
++        yaml_cfg = []
++        cfg_file = cfg.CONF.pipeline_cfg_file
++        if not os.path.exists(cfg_file):
++            cfg_file = cfg.CONF.find_file(cfg_file)
++        with open(cfg_file) as fap:
++            filedata = fap.read()
++            yaml_cfg = yaml.safe_load(filedata)
++
++        # Parse and convert to Pipeline objects
++        pipelines = self.get_pipelines_from_cfg(yaml_cfg)
++        for p in pipelines:
++            for pb in p.sink.publishers:
++                if isinstance(pb, csvfile.CSVFilePublisher):
++                    # If it is the same sink, we can just overwrite it
++                    pipeline_cfg[p.sink.name] = self.format_as_dict(p.sink, pb)
++        return pipeline_cfg.values()
++
++    def get_pipelines(self):
++        return self.get_pipelines_from_yaml()
++
++    @wsme_pecan.wsexpose(Pipeline, unicode)
++    def get_one(self, pipeline_name):
++        """Retrieve details about one pipeline.
++
++        :param pipeline_name: The name of the pipeline.
++        """
++        # authorized_project = acl.get_limited_to_project(
++        #                           pecan.request.headers)
++        pipelines = self.get_pipelines()
++        for p in pipelines:
++            # The pipeline name HERE is the same as the sink name
++            if p.get('name', None) == pipeline_name:
++                return Pipeline.from_dict(p)
++        raise base.EntityNotFound(_('Pipeline'), pipeline_name)
++
++    @wsme_pecan.wsexpose([Pipeline], [base.Query])
++    def get_all(self, q=[]):
++        """Retrieve definitions of all of the pipelines.
++
++        :param q: Filter rules for the pipelines to be returned.   unused
++        """
++        # authorized_project = acl.get_limited_to_project(
++        #                           pecan.request.headers)
++        # kwargs =
++        # _query_to_kwargs(q, pecan.request.storage_conn.get_resources)
++        pipelines = self.get_pipelines()
++        pipeline_list = [Pipeline.from_dict(p) for p in pipelines]
++        return pipeline_list
++
++    @wsme.validate(Pipeline)
++    @wsme_pecan.wsexpose(Pipeline, wtypes.text, body=Pipeline)
++    def put(self, data):
++        """Modify this pipeline."""
++        # authorized_project = acl.get_limited_to_project(
++        #                           pecan.request.headers)
++        # note(sileht): workaround for
++        # https://bugs.launchpad.net/wsme/+bug/1220678
++        Pipeline.validate(data)
++
++        # Get the matching csv publisher for the pipeline.
++        yaml_cfg = []
++        cfg_file = cfg.CONF.pipeline_cfg_file
++        if not os.path.exists(cfg_file):
++            cfg_file = cfg.CONF.find_file(cfg_file)
++        with open(cfg_file) as fap:
++            filedata = fap.read()
++            yaml_cfg = yaml.safe_load(filedata)
++
++        # Parse and convert to Pipeline objects
++        pipelines = self.get_pipelines_from_cfg(yaml_cfg)
++
++        csv = None
++        for p in pipelines:
++            if p.sink.name == data.name:
++                for pb in p.sink.publishers:
++                    if isinstance(pb, csvfile.CSVFilePublisher):
++                        csv = pb
++                        break
++
++        if not csv:
++            raise base.EntityNotFound(_('Pipeline'), data.name)
++
++        # Alter the settings.
++        csv.change_settings(enabled=data.enabled,
++                            location=data.location,
++                            max_bytes=data.max_bytes,
++                            backup_count=data.backup_count,
++                            compress=data.compress)
++        new_csv = csv.as_yaml()
++
++        # Set new_csv as the matching csvfile publisher for the sink
++        sinks = yaml_cfg.get('sinks', [])
++        for sink in sinks:
++            if sink.get('name') == data.name:
++                publishers = sink.get('publishers', [])
++                for index, item in enumerate(publishers):
++                    if item.strip().lower().startswith('csvfile:'):
++                        publishers[index] = new_csv
++
++        # Re-process in-memory version of yaml to prove it is still good
++        # Should show throw an exception if syntax became invalid
++
++        pipelines = self.get_pipelines_from_cfg(yaml_cfg)
++
++        # Must be outputted as a single yaml (ie: use dump ,not dump_all)
++        stream = file(cfg_file, 'w')
++        # Write a YAML representation of data to 'document.yaml'.
++        yaml.safe_dump(yaml_cfg,
++                       stream,
++                       default_flow_style=False)
++        stream.close()
++
++        # Emit SIGHUP to all ceilometer processes to re-read config
++        hup_list = ['ceilometer-collector',
++                    'ceilometer-agent-notification']
++        for h in hup_list:
++            p1 = subprocess.Popen(['pgrep', '-f', h], stdout=subprocess.PIPE)
++            subprocess.Popen(['xargs', '--no-run-if-empty', 'kill', '-HUP'],
++                             stdin=p1.stdout, stdout=subprocess.PIPE)
++        pecan.request.pipeline_manager = pipeline_t.setup_pipeline()
++        # Re-parse and return value from file
++        # This protects us if the file was not stored properly
++        pipelines = self.get_pipelines()
++        for p in pipelines:
++            if p.get('name', None) == data.name:
++                return Pipeline.from_dict(p)
++        # If we are here, the yaml got corrupted somehow
++        raise wsme.exc.ClientSideError(unicode('pipeline yaml is corrupted'))
+diff --git a/ceilometer/api/controllers/v2/root.py b/ceilometer/api/controllers/v2/root.py
+index 5cc7c21..4841a71 100644
+--- a/ceilometer/api/controllers/v2/root.py
++++ b/ceilometer/api/controllers/v2/root.py
+@@ -17,6 +17,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ from keystoneauth1 import exceptions
+ from oslo_config import cfg
+@@ -25,7 +32,9 @@ from oslo_utils import strutils
+ import pecan
+ 
+ from ceilometer.api.controllers.v2 import capabilities
++from ceilometer.api.controllers.v2 import extensions
+ from ceilometer.api.controllers.v2 import meters
++from ceilometer.api.controllers.v2 import pipelines
+ from ceilometer.api.controllers.v2 import query
+ from ceilometer.api.controllers.v2 import resources
+ from ceilometer.api.controllers.v2 import samples
+@@ -96,6 +105,8 @@ class V2Controller(object):
+     """Version 2 API controller root."""
+ 
+     capabilities = capabilities.CapabilitiesController()
++    vars()['wrs-pipelines'] = pipelines.PipelinesController()
++    extensions = extensions.ExtensionsController()
+ 
+     def __init__(self):
+         self._gnocchi_is_enabled = None
+-- 
+2.7.4
+

@@ -1,0 +1,70 @@
+From a25b018c3357f044447fdae100d463d39c632932 Mon Sep 17 00:00:00 2001
+From: Alex Kozyrev <alex.kozyrev@windriver.com>
+Date: Tue, 2 Jan 2018 14:39:43 -0500
+Subject: [PATCH 38/91] CGTS-8219 "integer out of range" error for ID of
+ Ceilometer Sample; ID integer overflow in sample table causes high cpu and
+ log volume on a system. Expand possible value range for id column by
+ switching from Int to BigInt.
+
+---
+ .../versions/046_sample_id_int_is_bigint.py        | 34 ++++++++++++++++++++++
+ ceilometer/storage/sqlalchemy/models.py            |  2 +-
+ 2 files changed, 35 insertions(+), 1 deletion(-)
+ create mode 100644 ceilometer/storage/sqlalchemy/migrate_repo/versions/046_sample_id_int_is_bigint.py
+
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/046_sample_id_int_is_bigint.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/046_sample_id_int_is_bigint.py
+new file mode 100644
+index 0000000..79e5d87
+--- /dev/null
++++ b/ceilometer/storage/sqlalchemy/migrate_repo/versions/046_sample_id_int_is_bigint.py
+@@ -0,0 +1,34 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++#
++# Copyright (c) 2017 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++
++from sqlalchemy import BigInteger
++from sqlalchemy import Integer
++from sqlalchemy import MetaData
++from sqlalchemy import Table
++
++
++def upgrade(migrate_engine):
++    meta = MetaData(bind=migrate_engine)
++    resource = Table('sample', meta, autoload=True)
++    resource.c.id.alter(type=BigInteger)
++
++
++def downgrade(migrate_engine):
++    meta = MetaData(bind=migrate_engine)
++    resource = Table('sample', meta, autoload=True)
++    resource.c.id.alter(type=Integer)
+diff --git a/ceilometer/storage/sqlalchemy/models.py b/ceilometer/storage/sqlalchemy/models.py
+index 4498643..59c815f 100644
+--- a/ceilometer/storage/sqlalchemy/models.py
++++ b/ceilometer/storage/sqlalchemy/models.py
+@@ -227,7 +227,7 @@ class Sample(Base):
+         Index('ix_sample_meter_id_resource_id', 'meter_id', 'resource_id'),
+         _COMMON_TABLE_ARGS,
+     )
+-    id = Column(Integer, primary_key=True)
++    id = Column(BigInteger, primary_key=True)
+     meter_id = Column(Integer, ForeignKey('meter.id'))
+     resource_id = Column(Integer, ForeignKey('resource.internal_id'))
+     volume = Column(Float(53))
+-- 
+2.7.4
+

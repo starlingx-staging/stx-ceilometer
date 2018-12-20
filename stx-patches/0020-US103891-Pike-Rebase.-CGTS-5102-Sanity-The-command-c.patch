@@ -1,0 +1,54 @@
+From b7d146e2d04cf8ce9831cffbf1232d6ed2af96de Mon Sep 17 00:00:00 2001
+From: Bin Qian <bin.qian@windriver.com>
+Date: Thu, 12 Jan 2017 16:25:14 -0500
+Subject: [PATCH 20/91] US103891: Pike Rebase. CGTS-5102 Sanity: The command
+ "ceilometer statistics" for the image.size meter returns invalid values
+
+---
+ ceilometer/storage/impl_sqlalchemy.py | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index 9fa674f..c7e76dd 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -146,7 +146,8 @@ def make_query_from_filter(session, query, sample_filter, require_meter=True):
+     """
+ 
+     if sample_filter.meter:
+-        query = query.filter(models.Meter.name == sample_filter.meter)
++        # meter filter is on caller level with a in clause
++        pass
+     elif require_meter:
+         raise RuntimeError('Missing required meter specifier')
+     if sample_filter.source:
+@@ -1059,6 +1060,8 @@ class Connection(base.Connection):
+ 
+         query = (
+             session.query(*select)
++            .join(models.Meter,
++                  models.Sample.meter_id == models.Meter.id)
+             .join(models.Resource,
+                   models.Resource.internal_id == models.Sample.resource_id)
+             .group_by(models.Meter.unit))
+@@ -1235,7 +1238,7 @@ class Connection(base.Connection):
+ 
+         if not period:
+             q = self._make_stats_query(sample_filter, groupby, aggregate)
+-            q.filter(
++            q = q.filter(
+                 models.Sample.meter_id.in_(meter_id_list)
+             )
+             for res in q:
+@@ -1248,7 +1251,7 @@ class Connection(base.Connection):
+ 
+         if not (sample_filter.start_timestamp and sample_filter.end_timestamp):
+             q = self._make_stats_query(sample_filter, None, aggregate)
+-            q.filter(
++            q = q.filter(
+                 models.Sample.meter_id.in_(meter_id_list)
+             )
+             res = q.first()
+-- 
+2.7.4
+

@@ -1,0 +1,47 @@
+From 44e44b4ea8a834b06b3c40503505a3ce9d7bda9d Mon Sep 17 00:00:00 2001
+From: gord chung <gord@live.ca>
+Date: Mon, 13 Nov 2017 10:39:26 -0500
+Subject: [PATCH 60/91] always declare partitioning variables
+
+also, just use partition_coordinator to figure out if we need to handle
+stuff as that's what we use everywhere else.
+
+Change-Id: I8724a41408b89f29b600a03fbf1c7febb55fb5e5
+(cherry picked from commit 367a0de7a6a197eb248277e1b9a0e25e190603de)
+---
+ ceilometer/agent/manager.py | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/ceilometer/agent/manager.py b/ceilometer/agent/manager.py
+index 389732c..99c7bbc 100644
+--- a/ceilometer/agent/manager.py
++++ b/ceilometer/agent/manager.py
+@@ -107,7 +107,7 @@ class Resources(object):
+         if self._resources:
+             static_resources_group = self.agent_manager.construct_group_id(
+                 utils.hash_of_set(self._resources))
+-            if self.agent_manager.hashrings:
++            if self.agent_manager.partition_coordinator:
+                 return [v for v in self._resources if
+                         self.agent_manager.hashrings[
+                             static_resources_group].belongs_to_self(
+@@ -282,14 +282,13 @@ class AgentManager(cotyledon.Service):
+         self.discoveries = list(itertools.chain(*list(discoveries)))
+         self.polling_periodics = None
+ 
++        self.hashrings = None
++        self.partition_coordinator = None
+         if self.conf.coordination.backend_url:
+             # XXX uuid4().bytes ought to work, but it requires ascii for now
+             coordination_id = str(uuid.uuid4()).encode('ascii')
+             self.partition_coordinator = coordination.get_coordinator(
+                 self.conf.coordination.backend_url, coordination_id)
+-            self.hashrings = None
+-        else:
+-            self.partition_coordinator = None
+ 
+         # Compose coordination group prefix.
+         # We'll use namespaces as the basement for this partitioning.
+-- 
+2.7.4
+

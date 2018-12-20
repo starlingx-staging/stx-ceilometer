@@ -1,0 +1,122 @@
+From 1c44fdc09882f472479abfdd5f9b6d4c2580f541 Mon Sep 17 00:00:00 2001
+From: yhu6 <yong.hu@intel.com>
+Date: Wed, 25 Apr 2018 21:20:09 +0800
+Subject: [PATCH 84/91] remove WR internal IDs
+
+---
+ ceilometer/api/controllers/v2/resources.py | 2 +-
+ ceilometer/collector.py                    | 2 +-
+ ceilometer/compute/pollsters/__init__.py   | 2 +-
+ ceilometer/pipeline.py                     | 4 ++--
+ ceilometer/publisher/messaging.py          | 2 +-
+ ceilometer/storage/impl_sqlalchemy.py      | 6 +++---
+ 6 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/ceilometer/api/controllers/v2/resources.py b/ceilometer/api/controllers/v2/resources.py
+index e9a97d2..883e85b 100644
+--- a/ceilometer/api/controllers/v2/resources.py
++++ b/ceilometer/api/controllers/v2/resources.py
+@@ -156,7 +156,7 @@ class ResourcesController(rest.RestController):
+         q = q or []
+         r_ids = []
+         if len(q) == 1:
+-            # US82783: Improve query time for meter-based stats reports from
++            # Improve query time for meter-based stats reports from
+             # Horizon. Get resource info for specified resource ids in one
+             # call as opposed to one by one.
+             # q is a list of Query objects. Convert the first and
+diff --git a/ceilometer/collector.py b/ceilometer/collector.py
+index 0d7ca54..dd7399d 100644
+--- a/ceilometer/collector.py
++++ b/ceilometer/collector.py
+@@ -164,7 +164,7 @@ class CollectorService(cotyledon.Service):
+         except Exception:
+             LOG.debug("Signal only works in main thread.")
+ 
+-        # CGTS-5124: Parent process does not have sample_listener and
++        # Parent process does not have sample_listener and
+         # event-listener. Ensure the stop sequence is run to completion
+         # otherwise the child processes won't get terminated and release
+         # there database connections.
+diff --git a/ceilometer/compute/pollsters/__init__.py b/ceilometer/compute/pollsters/__init__.py
+index f2b0a70..b8cb031 100644
+--- a/ceilometer/compute/pollsters/__init__.py
++++ b/ceilometer/compute/pollsters/__init__.py
+@@ -158,7 +158,7 @@ class GenericComputePollster(plugin_base.PollsterBase):
+                             '%(instance_id)s, non-fatal reason: %(exc)s',
+                             {'pollster': self.__class__.__name__,
+                              'instance_id': instance.id, 'exc': e})
+-                # CGTS-8688. Do not declare this a permanent error
++                # Do not declare this a permanent error
+                 # since other resources may be fine
+                 # raise plugin_base.PollsterPermanentError(resources)
+             except ceilometer.NotImplementedError:
+diff --git a/ceilometer/pipeline.py b/ceilometer/pipeline.py
+index dbb5469..d9a773e 100644
+--- a/ceilometer/pipeline.py
++++ b/ceilometer/pipeline.py
+@@ -438,7 +438,7 @@ class Sink(object):
+                     "No transformer named %s loaded" % transformer['name'],
+                     cfg)
+             transformers.append(ext.plugin(**parameter))
+-            # US82783: Downgrade high frequency non-essential logs to debug
++            # Downgrade high frequency non-essential logs to debug
+             # to reduce I/O
+             LOG.debug(
+                 "Pipeline %(pipeline)s: Setup transformer instance %(name)s "
+@@ -783,7 +783,7 @@ class PipelineManager(ConfigManagerBase):
+         if not ('sources' in cfg and 'sinks' in cfg):
+             raise PipelineException("Both sources & sinks are required",
+                                     cfg)
+-        # US82783: Downgrade high frequency non-essential logs to debug
++        # Downgrade high frequency non-essential logs to debug
+         # to reduce I/O
+         LOG.debug('detected decoupled pipeline config format')
+         publisher_manager = PublisherManager(self.conf, p_type['name'])
+diff --git a/ceilometer/publisher/messaging.py b/ceilometer/publisher/messaging.py
+index 3ede290..e155f85 100644
+--- a/ceilometer/publisher/messaging.py
++++ b/ceilometer/publisher/messaging.py
+@@ -89,7 +89,7 @@ class MessagingPublisher(publisher.ConfigPublisherBase):
+         self.local_queue = []
+ 
+         if self.policy in ['default', 'queue', 'drop']:
+-            # US82783: Downgrade high frequency non-essential logs to
++            # Downgrade high frequency non-essential logs to
+             # debug to reduce I/O
+             LOG.debug('Publishing policy set to %s', self.policy)
+         else:
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index c554e57..efc403f 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -738,7 +738,7 @@ class Connection(base.Connection):
+                                  res_id[0])
+                          .order_by(models.Sample.id.desc()).limit(1))
+             else:
+-                # US82778: If the client does not specify the timestamps, use
++                # If the client does not specify the timestamps, use
+                 # a much leaner query to retrieve resource info
+                 min_max_ts = namedtuple('min_max_ts', ['min_timestamp',
+                                                        'max_timestamp'])
+@@ -787,7 +787,7 @@ class Connection(base.Connection):
+         session = self._engine_facade.get_session()
+ 
+         if s_filter.meter:
+-            # US82778: If a specific meter is provided which is the case for
++            # If a specific meter is provided which is the case for
+             # meter based stats report, use a faster query
+             subq = session.query(models.Sample.meter_id.label('m_id'),
+                                  models.Sample.resource_id.label('res_id'),
+@@ -1307,7 +1307,7 @@ class Connection(base.Connection):
+ 
+         :param resource_ids: Mandatory list of resource IDs.
+         """
+-        # US82783: WRS extension to the OpenStack Ceilometer SQL storage
++        # WRS extension to the OpenStack Ceilometer SQL storage
+         # connection class. It provides an effective method to retrieve
+         # resource info for a batch of resource ids. This method should be
+         # used when the client does not specify user, project, source,
+-- 
+2.7.4
+

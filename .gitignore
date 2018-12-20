@@ -20,3 +20,4 @@ releasenotes/build
 
 # Files created by api-ref build
 api-ref/build
+stx-patches

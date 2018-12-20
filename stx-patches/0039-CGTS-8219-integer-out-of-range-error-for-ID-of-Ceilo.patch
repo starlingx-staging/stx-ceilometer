@@ -1,0 +1,34 @@
+From a9d89b7cbb03b0672bad04947fa9edcf69b3430d Mon Sep 17 00:00:00 2001
+From: Alex Kozyrev <alex.kozyrev@windriver.com>
+Date: Thu, 4 Jan 2018 13:53:15 -0500
+Subject: [PATCH 39/91] CGTS-8219 "integer out of range" error for ID of
+ Ceilometer Sample; ID integer overflow in sample table causes high cpu and
+ log volume on a system. reset meter_id_seq whenever it is approaching 80% of
+ its max value.
+
+---
+ ceilometer/storage/impl_sqlalchemy.py | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index 6a07f37..cc0cd3c 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -624,6 +624,14 @@ class Connection(base.Connection):
+             rows = sample_q.delete()
+             LOG.info("%d samples removed from database", rows)
+ 
++        engine = self._engine_facade.get_engine()
++        with engine.connect() as conn:
++            result = conn.execute(text('SELECT last_value FROM meter_id_seq;'))
++            first_row = result.first()
++            if first_row is not None and first_row['last_value'] > 1717986918:
++                conn.execute(text('ALTER SEQUENCE meter_id_seq RESTART WITH 1;'))
++                LOG.info("restart sample id sequence, last value was %d", first_row['last_value'])
++
+         if not self.conf.database.sql_expire_samples_only:
+             with session.begin():
+                 # remove Meter definitions with no matching samples
+-- 
+2.7.4
+

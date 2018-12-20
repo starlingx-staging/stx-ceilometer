@@ -1,0 +1,492 @@
+From e49bfd310f138c11a6eb85d385231ca492a61b60 Mon Sep 17 00:00:00 2001
+From: Dahir Osman <dahir.osman@windriver.com>
+Date: Thu, 12 Jan 2017 16:24:05 -0500
+Subject: [PATCH 19/91] US103891: Pike Rebase. AVS packet drops and
+ notifications reduction
+
+This squash includes the following commits:
+
+1. US78237: Ceilometer Meters for AVS Packet Drops
+
+TiS currently has ceilometer meters for packet drops on ports.
+The following additional meters are required
+
+ - Packets dropped by the AVS engines due to QOS (rx-discard/tx-discard)
+ - Packets dropped at the interface layer (rx/tx errors, rx/tx discards)
+
+2. CGTS-5451: Reduce AVS Ceilometer notifications
+
+The neutron AVS agent Ceilometer notifications come in batches (engines,
+ports, interfaces) instead of for each engine/port/interface.
+---
+ .../tests/unit/vswitch/test_notifications.py       |  14 +-
+ ceilometer/vswitch/notifications.py                | 355 ++++++++++++++-------
+ setup.cfg                                          |   1 +
+ 3 files changed, 246 insertions(+), 124 deletions(-)
+
+diff --git a/ceilometer/tests/unit/vswitch/test_notifications.py b/ceilometer/tests/unit/vswitch/test_notifications.py
+index aeb2837..ccaebc4 100644
+--- a/ceilometer/tests/unit/vswitch/test_notifications.py
++++ b/ceilometer/tests/unit/vswitch/test_notifications.py
+@@ -37,9 +37,9 @@ VSWITCH_ENGINE_UPDATE = {
+     u'_context_service_catalog': [],
+     u'_context_auth_token': None,
+     u'_context_user_id': None,
+-    u'payload': {
++    u'payload': {u'engine-metrics': [{
+         u'uuid': RES_ID,
+-        u'cpu_util': u'50'
++        u'cpu_util': u'50'}]
+     },
+     u'priority': u'INFO',
+     u'publisher_id': u'compute.vswitch.wrs.com',
+@@ -62,7 +62,7 @@ class TestVSwitchEngineNotification(base.BaseTestCase):
+ 
+     def test_engine_error(self):
+         ERROR_UPDATE = copy.copy(VSWITCH_ENGINE_UPDATE)
+-        ERROR_UPDATE['payload'] = {}
++        ERROR_UPDATE['payload'] = {u'engine-metrics': [{}]}
+         engine = notifications.Engine(None)
+         self.assertIn(VSWITCH_ENGINE_UPDATE['event_type'], engine.event_types)
+         samples = list(engine.process_notification(ERROR_UPDATE))
+@@ -70,7 +70,7 @@ class TestVSwitchEngineNotification(base.BaseTestCase):
+ 
+ VSWITCH_PORT_UPDATE = copy.copy(VSWITCH_ENGINE_UPDATE)
+ VSWITCH_PORT_UPDATE[u'event_type'] = u'vswitch.meter.port'
+-VSWITCH_PORT_UPDATE[u'payload'] = {
++VSWITCH_PORT_UPDATE[u'payload'] = {u'port-metrics': [{
+     u'uuid': RES_ID,
+     u'tenant_id': u'004f2be7-3fa4-4162-bb24-b1fdaf130183',
+     u'network_id': u'cb0caf9f-02e8-40cd-9333-ca1ef7c91c89',
+@@ -83,7 +83,7 @@ VSWITCH_PORT_UPDATE[u'payload'] = {
+     u'rx-util': u'50',
+     u'tx-util': u'51',
+     u'rx-errors': u'20',
+-    u'tx-errors': u'21',
++    u'tx-errors': u'21'}]
+ }
+ 
+ 
+@@ -91,7 +91,7 @@ class TestVSwitchPortNotification(base.BaseTestCase):
+ 
+     def test_port_error(self):
+         ERROR_UPDATE = copy.copy(VSWITCH_PORT_UPDATE)
+-        ERROR_UPDATE['payload'] = {}
++        ERROR_UPDATE['payload'] = {u'port-metrics': [{}]}
+         port = notifications.Port(None)
+         self.assertIn(VSWITCH_PORT_UPDATE['event_type'], port.event_types)
+         samples = list(port.process_notification(ERROR_UPDATE))
+@@ -102,7 +102,7 @@ class TestVSwitchPortNotification(base.BaseTestCase):
+         for attr in ['tenant_id', 'uuid', 'network_id',
+                      'link-speed', 'host']:
+             ERROR_UPDATE = copy.copy(VSWITCH_PORT_UPDATE)
+-            del ERROR_UPDATE['payload'][attr]
++            del ERROR_UPDATE['payload']['port-metrics'][0][attr]
+             port = notifications.Port(None)
+             self.assertIn(VSWITCH_PORT_UPDATE['event_type'], port.event_types)
+             samples = list(port.process_notification(ERROR_UPDATE))
+diff --git a/ceilometer/vswitch/notifications.py b/ceilometer/vswitch/notifications.py
+index 0b14661..73054e5 100644
+--- a/ceilometer/vswitch/notifications.py
++++ b/ceilometer/vswitch/notifications.py
+@@ -63,27 +63,64 @@ class Engine(VSwitchNotificationBase):
+     event_types = ['vswitch.meter.engine']
+ 
+     def process_notification(self, message):
+-        try:
++        LOG.debug('vswitch engine notification %r', message)
++
++        engine_metrics = message['payload']['engine-metrics']
++
++        for metrics in engine_metrics:
++            try:
++                info = {
++                    'project_id': None,
++                    'resource_id': metrics['uuid'],
++                    'timestamp': message['timestamp'],
++                    'resource_metadata': {
++                        'cpu_id': metrics.get('cpu_id', None),
++                        'host': metrics.get('host', None)
++                    },
++                    'user_id': None
++                }
++            except Exception as err:
++                LOG.warning(_('An error occured while building '
++                              'sample info: %(e)s') % {'e': err})
++                return
++
+             name = 'vswitch.engine.util'
+-            info = {
+-                'project_id': None,
+-                'resource_id': message['payload']['uuid'],
+-                'timestamp': message['timestamp'],
+-                'resource_metadata': {
+-                    'cpu_id': message['payload'].get('cpu_id', None),
+-                    'host': message['payload'].get('host', None)
+-                },
+-                'user_id': None
+-            }
+-            yield sample.Sample(
+-                name=name,
+-                type=sample.TYPE_GAUGE,
+-                unit='%',
+-                volume=float(message['payload']['cpu_util']),
+-                **info)
+-        except Exception as err:
+-            LOG.warning(_('An error occured while building %(m)s '
+-                          'sample: %(e)s') % {'m': name, 'e': err})
++            try:
++                yield sample.Sample(
++                    name=name,
++                    type=sample.TYPE_GAUGE,
++                    unit='%',
++                    volume=float(metrics['cpu_util']),
++                    **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
++            name = 'vswitch.engine.receive.discard'
++            try:
++                if long(metrics['rx_discard']) > 0:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_CUMULATIVE,
++                        unit='packet',
++                        volume=long(metrics['rx_discard']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
++            name = 'vswitch.engine.transmit.discard'
++            try:
++                if long(metrics['tx_discard']) > 0:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_CUMULATIVE,
++                        unit='packet',
++                        volume=long(metrics['tx_discard']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
+ 
+ 
+ class Port(VSwitchNotificationBase):
+@@ -95,119 +132,203 @@ class Port(VSwitchNotificationBase):
+     def process_notification(self, message):
+         LOG.debug('vswitch port notification %r', message)
+ 
+-        try:
+-            info = {
+-                'project_id': message['payload']['tenant_id'],
+-                'resource_id': message['payload']['uuid'],
+-                'timestamp': message['timestamp'],
+-                'resource_metadata': {
+-                    'network_id': message['payload']['network_id'],
+-                    'link-speed': message['payload']['link-speed'],
+-                    'host': message['payload']['host']
+-                },
+-                'user_id': None
+-            }
+-        except Exception as err:
+-            LOG.warning(_('An error occured while building '
+-                          'sample info: %(e)s') % {'e': err})
+-            return
+-
+-        name = 'vswitch.port.receive.bytes'
+-        try:
+-            yield sample.Sample(
+-                name=name,
+-                type=sample.TYPE_CUMULATIVE,
+-                unit='B',
+-                volume=long(message['payload']['rx-bytes']),
+-                **info)
+-        except Exception as err:
+-            LOG.warning(_('An error occured while building %(m)s '
+-                          'sample: %(e)s') % {'m': name, 'e': err})
+-
+-        name = 'vswitch.port.transmit.bytes'
+-        try:
+-            yield sample.Sample(
+-                name=name,
+-                type=sample.TYPE_CUMULATIVE,
+-                unit='B',
+-                volume=long(message['payload']['tx-bytes']),
+-                **info)
+-        except Exception as err:
+-            LOG.warning(_('An error occured while building %(m)s '
+-                          'sample: %(e)s') % {'m': name, 'e': err})
+-
+-        name = 'vswitch.port.receive.packets'
+-        try:
+-            yield sample.Sample(
+-                name=name,
+-                type=sample.TYPE_CUMULATIVE,
+-                unit='packet',
+-                volume=long(message['payload']['rx-packets']),
+-                **info)
+-        except Exception as err:
+-            LOG.warning(_('An error occured while building %(m)s '
+-                          'sample: %(e)s') % {'m': name, 'e': err})
+-
+-        name = 'vswitch.port.transmit.packets'
+-        try:
+-            yield sample.Sample(
+-                name=name,
+-                type=sample.TYPE_CUMULATIVE,
+-                unit='packet',
+-                volume=long(message['payload']['tx-packets']),
+-                **info)
+-        except Exception as err:
+-            LOG.warning(_('An error occured while building %(m)s '
+-                          'sample: %(e)s') % {'m': name, 'e': err})
+-
+-        name = 'vswitch.port.receive.util'
+-        try:
+-            if message['payload']['rx-util'] is not None:
++        port_metrics = message['payload']['port-metrics']
++
++        for metrics in port_metrics:
++            try:
++                info = {
++                    'project_id': metrics['tenant_id'],
++                    'resource_id': metrics['uuid'],
++                    'timestamp': message['timestamp'],
++                    'resource_metadata': {
++                        'network_id': metrics['network_id'],
++                        'link-speed': metrics['link-speed'],
++                        'host': metrics['host']
++                    },
++                    'user_id': None
++                }
++            except Exception as err:
++                LOG.warning(_('An error occured while building '
++                              'sample info: %(e)s') % {'e': err})
++                return
++
++            name = 'vswitch.port.receive.bytes'
++            try:
+                 yield sample.Sample(
+                     name=name,
+-                    type=sample.TYPE_GAUGE,
+-                    unit='%',
+-                    volume=float(message['payload']['rx-util']),
++                    type=sample.TYPE_CUMULATIVE,
++                    unit='B',
++                    volume=long(metrics['rx-bytes']),
+                     **info)
+-        except Exception as err:
+-            LOG.warning(_('An error occured while building %(m)s '
+-                          'sample: %(e)s') % {'m': name, 'e': err})
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
+ 
+-        name = 'vswitch.port.transmit.util'
+-        try:
+-            if message['payload']['tx-util'] is not None:
++            name = 'vswitch.port.transmit.bytes'
++            try:
+                 yield sample.Sample(
+                     name=name,
+-                    type=sample.TYPE_GAUGE,
+-                    unit='%',
+-                    volume=float(message['payload']['tx-util']),
++                    type=sample.TYPE_CUMULATIVE,
++                    unit='B',
++                    volume=long(metrics['tx-bytes']),
+                     **info)
+-        except Exception as err:
+-            LOG.warning(_('An error occured while building %(m)s '
+-                          'sample: %(e)s') % {'m': name, 'e': err})
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
+ 
+-        name = 'vswitch.port.receive.errors'
+-        try:
+-            if long(message['payload']['rx-errors']) > 0:
++            name = 'vswitch.port.receive.packets'
++            try:
+                 yield sample.Sample(
+                     name=name,
+                     type=sample.TYPE_CUMULATIVE,
+                     unit='packet',
+-                    volume=long(message['payload']['rx-errors']),
++                    volume=long(metrics['rx-packets']),
+                     **info)
+-        except Exception as err:
+-            LOG.warning(_('An error occured while building %(m)s '
+-                          'sample: %(e)s') % {'m': name, 'e': err})
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
+ 
+-        name = 'vswitch.port.transmit.errors'
+-        try:
+-            if long(message['payload']['tx-errors']) > 0:
++            name = 'vswitch.port.transmit.packets'
++            try:
+                 yield sample.Sample(
+                     name=name,
+                     type=sample.TYPE_CUMULATIVE,
+                     unit='packet',
+-                    volume=long(message['payload']['tx-errors']),
++                    volume=long(metrics['tx-packets']),
+                     **info)
+-        except Exception as err:
+-            LOG.warning(_('An error occured while building %(m)s '
+-                          'sample: %(e)s') % {'m': name, 'e': err})
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
++            name = 'vswitch.port.receive.util'
++            try:
++                if metrics['rx-util'] is not None:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_GAUGE,
++                        unit='%',
++                        volume=float(metrics['rx-util']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
++            name = 'vswitch.port.transmit.util'
++            try:
++                if metrics['tx-util'] is not None:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_GAUGE,
++                        unit='%',
++                        volume=float(metrics['tx-util']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
++            name = 'vswitch.port.receive.errors'
++            try:
++                if long(metrics['rx-errors']) > 0:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_CUMULATIVE,
++                        unit='packet',
++                        volume=long(metrics['rx-errors']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
++            name = 'vswitch.port.transmit.errors'
++            try:
++                if long(metrics['tx-errors']) > 0:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_CUMULATIVE,
++                        unit='packet',
++                        volume=long(metrics['tx-errors']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
++
++class Interface(VSwitchNotificationBase):
++    """Convert vswitch interface metering notifications into samples.
++
++    """
++    event_types = ['vswitch.meter.interface']
++
++    def process_notification(self, message):
++        LOG.debug('vswitch interface notification %r', message)
++
++        interface_metrics = message['payload']['interface-metrics']
++
++        for metrics in interface_metrics:
++            try:
++                info = {
++                    'project_id': metrics['tenant_id'],
++                    'resource_id': metrics['uuid'],
++                    'timestamp': message['timestamp'],
++                    'resource_metadata': {
++                        'host': metrics['host'],
++                        'network_uuid': metrics['network_uuid']
++                    },
++                    'user_id': None
++                }
++            except Exception as err:
++                LOG.warning(_('An error occured while building '
++                              'sample info: %(e)s') % {'e': err})
++                return
++
++            name = 'vswitch.interface.receive.errors'
++            try:
++                if long(metrics['rx-errors']) > 0:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_CUMULATIVE,
++                        unit='packet',
++                        volume=long(metrics['rx-errors']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
++            name = 'vswitch.interface.transmit.errors'
++            try:
++                if long(metrics['tx-errors']) > 0:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_CUMULATIVE,
++                        unit='packet',
++                        volume=long(metrics['tx-errors']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
++            name = 'vswitch.interface.receive.discards'
++            try:
++                if long(metrics['rx-discards']) > 0:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_CUMULATIVE,
++                        unit='packet',
++                        volume=long(metrics['rx-discards']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
++
++            name = 'vswitch.interface.transmit.discards'
++            try:
++                if long(metrics['tx-discards']) > 0:
++                    yield sample.Sample(
++                        name=name,
++                        type=sample.TYPE_CUMULATIVE,
++                        unit='packet',
++                        volume=long(metrics['tx-discards']),
++                        **info)
++            except Exception as err:
++                LOG.warning(_('An error occured while building %(m)s '
++                              'sample: %(e)s') % {'m': name, 'e': err})
+diff --git a/setup.cfg b/setup.cfg
+index 2647ab9..58f74fe 100644
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -46,6 +46,7 @@ zaqar =
+ ceilometer.notification =
+     vswitch.meter.engine = ceilometer.vswitch.notifications:Engine
+     vswitch.meter.port = ceilometer.vswitch.notifications:Port
++    vswitch.meter.interface = ceilometer.vswitch.notifications:Interface
+     http.request = ceilometer.middleware:HTTPRequest
+     http.response = ceilometer.middleware:HTTPResponse
+     hardware.ipmi.temperature = ceilometer.ipmi.notifications.ironic:TemperatureSensorNotification
+-- 
+2.7.4
+

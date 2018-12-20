@@ -1,0 +1,557 @@
+From 1b5977921b81ec11cef551f8d138251d9acea252 Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Thu, 12 Jan 2017 15:38:48 -0500
+Subject: [PATCH 15/91] US103891: Pike Rebase. Feature: vswitch-handle vswitch
+ notifications
+
+Add vswitch notifications in setup.cfg
+
+This squash includes the following commits:
+
+1. Rebase. Mitaka. Port vswitch: handle vswitch notifications
+   commit: 362dead2c2e
+
+2. Rebase. Mitaka. Port reduce the amount of ceilometer resources being created through notification samples
+   commit: 89e8a526737
+
+    Reduce the amount of ceilometer resources being created through notification samples
+
+    This should speed up meter-list and resource-list queries.
+    This should reduce the size of the resource table in sql
+
+3. Rebase. Mitaka. Port vswitch notification
+   commit: 9aed65d6d46
+
+4. CGTS-4510: Meter type of some meters in ceilometer should be changed from delta to gauge
+   commit: 63216f435bd
+   Change meter type of avg.vswitch.engine.util and vswitch.engine.util to gauge
+
+5. US80977 Mitaka rebase fix
+   commit: d3d22424cc2
+
+   Notifier can now retrieve vswitch related notification targets. Move the logging of
+   definitions from info to debug as it fills up Ceilometer agent notification log file
+   rapidly.
+---
+ ceilometer/compute/virt/libvirt/inspector.py       |  11 ++
+ ceilometer/declarative.py                          |   2 +-
+ ceilometer/notification.py                         |   2 +-
+ ceilometer/opts.py                                 |   2 +
+ ceilometer/tests/unit/test_middleware.py           |   9 +-
+ ceilometer/tests/unit/vswitch/__init__.py          |   0
+ .../tests/unit/vswitch/test_notifications.py       | 162 ++++++++++++++++
+ ceilometer/vswitch/__init__.py                     |   0
+ ceilometer/vswitch/notifications.py                | 213 +++++++++++++++++++++
+ setup.cfg                                          |   2 +
+ 10 files changed, 400 insertions(+), 3 deletions(-)
+ create mode 100644 ceilometer/tests/unit/vswitch/__init__.py
+ create mode 100644 ceilometer/tests/unit/vswitch/test_notifications.py
+ create mode 100644 ceilometer/vswitch/__init__.py
+ create mode 100644 ceilometer/vswitch/notifications.py
+
+diff --git a/ceilometer/compute/virt/libvirt/inspector.py b/ceilometer/compute/virt/libvirt/inspector.py
+index 0bde7f8..e92170a 100644
+--- a/ceilometer/compute/virt/libvirt/inspector.py
++++ b/ceilometer/compute/virt/libvirt/inspector.py
+@@ -13,6 +13,13 @@
+ # License for the specific language governing permissions and limitations
+ # under the License.
+ """Implementation of Inspector abstraction for libvirt."""
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ from lxml import etree
+ from oslo_log import log as logging
+@@ -81,6 +88,10 @@ class LibvirtInspector(virt_inspector.Inspector):
+ 
+         tree = etree.fromstring(domain.XMLDesc(0))
+         for iface in tree.findall('devices/interface'):
++            # vswitch interfaces are gathered via the vswitch agent
++            iftype = iface.get('type')
++            if iftype == 'vswitch':
++                continue
+             target = iface.find('target')
+             if target is not None:
+                 name = target.get('dev')
+diff --git a/ceilometer/declarative.py b/ceilometer/declarative.py
+index 259aa44..f74d762 100644
+--- a/ceilometer/declarative.py
++++ b/ceilometer/declarative.py
+@@ -183,5 +183,5 @@ def load_definitions(conf, defaults, config_file, fallback_file=None):
+                   "Using default config.")
+         definition_cfg = defaults
+ 
+-    LOG.info("Definitions: %s", definition_cfg)
++    LOG.debug("Definitions: %s", definition_cfg)
+     return definition_cfg
+diff --git a/ceilometer/notification.py b/ceilometer/notification.py
+index fc9a2eb..b4beb33 100644
+--- a/ceilometer/notification.py
++++ b/ceilometer/notification.py
+@@ -90,7 +90,7 @@ EXCHANGES_OPTS = [
+     cfg.MultiStrOpt('notification_control_exchanges',
+                     default=['nova', 'glance', 'neutron', 'cinder', 'heat',
+                              'keystone', 'sahara', 'trove', 'zaqar', 'swift',
+-                             'ceilometer', 'magnum', 'dns'],
++                             'ceilometer', 'magnum', 'dns', 'vswitch'],
+                     deprecated_group='DEFAULT',
+                     deprecated_name="http_control_exchanges",
+                     help="Exchanges name to listen for notifications."),
+diff --git a/ceilometer/opts.py b/ceilometer/opts.py
+index d5c267c..93a1253 100644
+--- a/ceilometer/opts.py
++++ b/ceilometer/opts.py
+@@ -54,6 +54,7 @@ import ceilometer.sample
+ import ceilometer.storage
+ import ceilometer.utils
+ import ceilometer.volume.discovery
++import ceilometer.vswitch.notifications
+ 
+ 
+ OPTS = [
+@@ -93,6 +94,7 @@ def list_opts():
+                          ceilometer.sample.OPTS,
+                          ceilometer.utils.OPTS,
+                          ceilometer.exchange_control.EXCHANGE_OPTS,
++                         ceilometer.vswitch.notifications.OPTS,
+                          OPTS)),
+         ('api', itertools.chain(ceilometer.api.app.API_OPTS,
+                                 ceilometer.api.controllers.v2.root.API_OPTS)),
+diff --git a/ceilometer/tests/unit/test_middleware.py b/ceilometer/tests/unit/test_middleware.py
+index c5aec16..855a0f7 100644
+--- a/ceilometer/tests/unit/test_middleware.py
++++ b/ceilometer/tests/unit/test_middleware.py
+@@ -12,6 +12,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ import mock
+ 
+ from ceilometer import middleware
+@@ -97,4 +104,4 @@ class TestNotifications(base.BaseTestCase):
+ 
+     def test_targets(self):
+         targets = middleware.HTTPRequest(mock.Mock()).get_targets(self.CONF)
+-        self.assertEqual(13, len(targets))
++        self.assertEqual(14, len(targets))
+diff --git a/ceilometer/tests/unit/vswitch/__init__.py b/ceilometer/tests/unit/vswitch/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/ceilometer/tests/unit/vswitch/test_notifications.py b/ceilometer/tests/unit/vswitch/test_notifications.py
+new file mode 100644
+index 0000000..aeb2837
+--- /dev/null
++++ b/ceilometer/tests/unit/vswitch/test_notifications.py
+@@ -0,0 +1,162 @@
++#
++# Copyright 2012 Red Hat, Inc
++#
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++"""Implementation of Inspector abstraction for libvirt."""
++#
++# Copyright (c) 2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
++"""Tests for converters for producing switch counter messages from
++notification events.
++"""
++
++from ceilometer.vswitch import notifications
++import copy
++from oslotest import base
++
++RES_ID = u'16207266-ee15-48d7-88ad-ce9ed36f2bc8'
++
++VSWITCH_ENGINE_UPDATE = {
++    u'_context_request_id': u'req-a8bfa89b-d28b-4b95-9e4b-7d7875275650',
++    u'_context_quota_class': None,
++    u'event_type': u'vswitch.meter.engine',
++    u'_context_service_catalog': [],
++    u'_context_auth_token': None,
++    u'_context_user_id': None,
++    u'payload': {
++        u'uuid': RES_ID,
++        u'cpu_util': u'50'
++    },
++    u'priority': u'INFO',
++    u'publisher_id': u'compute.vswitch.wrs.com',
++    u'message_id': u'6eccedba-120e-4db8-9735-2ad5f061e5ee',
++    u'timestamp': u'2013-07-29 06:51:34.474815',
++}
++
++
++class TestVSwitchEngineNotification(base.BaseTestCase):
++
++    def test_engine(self):
++        engine = notifications.Engine(None)
++        self.assertIn(VSWITCH_ENGINE_UPDATE['event_type'], engine.event_types)
++        samples = list(engine.process_notification(VSWITCH_ENGINE_UPDATE))
++        self.assertEqual(1, len(samples))
++        self.assertEqual(RES_ID, samples[0].resource_id)
++        self.assertEqual('vswitch.engine.util', samples[0].name)
++        self.assertEqual(50, samples[0].volume)
++        self.assertEqual('%', samples[0].unit)
++
++    def test_engine_error(self):
++        ERROR_UPDATE = copy.copy(VSWITCH_ENGINE_UPDATE)
++        ERROR_UPDATE['payload'] = {}
++        engine = notifications.Engine(None)
++        self.assertIn(VSWITCH_ENGINE_UPDATE['event_type'], engine.event_types)
++        samples = list(engine.process_notification(ERROR_UPDATE))
++        self.assertEqual(0, len(samples))
++
++VSWITCH_PORT_UPDATE = copy.copy(VSWITCH_ENGINE_UPDATE)
++VSWITCH_PORT_UPDATE[u'event_type'] = u'vswitch.meter.port'
++VSWITCH_PORT_UPDATE[u'payload'] = {
++    u'uuid': RES_ID,
++    u'tenant_id': u'004f2be7-3fa4-4162-bb24-b1fdaf130183',
++    u'network_id': u'cb0caf9f-02e8-40cd-9333-ca1ef7c91c89',
++    u'link-speed': u'1000',
++    u'host': u'test-host',
++    u'rx-bytes': u'100',
++    u'tx-bytes': u'110',
++    u'rx-packets': u'10',
++    u'tx-packets': u'11',
++    u'rx-util': u'50',
++    u'tx-util': u'51',
++    u'rx-errors': u'20',
++    u'tx-errors': u'21',
++}
++
++
++class TestVSwitchPortNotification(base.BaseTestCase):
++
++    def test_port_error(self):
++        ERROR_UPDATE = copy.copy(VSWITCH_PORT_UPDATE)
++        ERROR_UPDATE['payload'] = {}
++        port = notifications.Port(None)
++        self.assertIn(VSWITCH_PORT_UPDATE['event_type'], port.event_types)
++        samples = list(port.process_notification(ERROR_UPDATE))
++        self.assertEqual(0, len(samples))
++
++    def test_port_metadata_error(self):
++        ERROR_UPDATE = copy.copy(VSWITCH_PORT_UPDATE)
++        for attr in ['tenant_id', 'uuid', 'network_id',
++                     'link-speed', 'host']:
++            ERROR_UPDATE = copy.copy(VSWITCH_PORT_UPDATE)
++            del ERROR_UPDATE['payload'][attr]
++            port = notifications.Port(None)
++            self.assertIn(VSWITCH_PORT_UPDATE['event_type'], port.event_types)
++            samples = list(port.process_notification(ERROR_UPDATE))
++            self.assertEqual(0, len(samples))
++
++    def test_port(self):
++        port = notifications.Port(None)
++        self.assertIn(VSWITCH_PORT_UPDATE['event_type'], port.event_types)
++        samples = list(port.process_notification(VSWITCH_PORT_UPDATE))
++
++        rxb_samples = [s for s in samples
++                       if s.name == 'vswitch.port.receive.bytes']
++        self.assertEqual(1, len(rxb_samples))
++        self.assertEqual(100, rxb_samples[0].volume)
++        self.assertEqual('B', rxb_samples[0].unit)
++
++        txb_samples = [s for s in samples
++                       if s.name == 'vswitch.port.transmit.bytes']
++        self.assertEqual(1, len(txb_samples))
++        self.assertEqual(110, txb_samples[0].volume)
++        self.assertEqual('B', txb_samples[0].unit)
++
++        rxp_samples = [s for s in samples
++                       if s.name == 'vswitch.port.receive.packets']
++        self.assertEqual(1, len(rxp_samples))
++        self.assertEqual(10, rxp_samples[0].volume)
++        self.assertEqual('packet', rxp_samples[0].unit)
++
++        txp_samples = [s for s in samples
++                       if s.name == 'vswitch.port.transmit.packets']
++        self.assertEqual(1, len(txp_samples))
++        self.assertEqual(11, txp_samples[0].volume)
++        self.assertEqual('packet', txp_samples[0].unit)
++
++        rxu_samples = [s for s in samples
++                       if s.name == 'vswitch.port.receive.util']
++        self.assertEqual(1, len(rxu_samples))
++        self.assertEqual(50, rxu_samples[0].volume)
++        self.assertEqual('%', rxu_samples[0].unit)
++
++        txu_samples = [s for s in samples
++                       if s.name == 'vswitch.port.transmit.util']
++        self.assertEqual(1, len(txu_samples))
++        self.assertEqual(51, txu_samples[0].volume)
++        self.assertEqual('%', txu_samples[0].unit)
++
++        rxp_samples = [s for s in samples
++                       if s.name == 'vswitch.port.receive.errors']
++        self.assertEqual(1, len(rxp_samples))
++        self.assertEqual(20, rxp_samples[0].volume)
++        self.assertEqual('packet', rxp_samples[0].unit)
++
++        txp_samples = [s for s in samples
++                       if s.name == 'vswitch.port.transmit.errors']
++        self.assertEqual(1, len(txp_samples))
++        self.assertEqual(21, txp_samples[0].volume)
++        self.assertEqual('packet', txp_samples[0].unit)
+diff --git a/ceilometer/vswitch/__init__.py b/ceilometer/vswitch/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/ceilometer/vswitch/notifications.py b/ceilometer/vswitch/notifications.py
+new file mode 100644
+index 0000000..0b14661
+--- /dev/null
++++ b/ceilometer/vswitch/notifications.py
+@@ -0,0 +1,213 @@
++# -*- encoding: utf-8 -*-
++#
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
++
++"""
++Handler for producing switch counter messages from vswitch
++notification events.
++
++"""
++
++from oslo_config import cfg
++from oslo_log import log
++import oslo_messaging
++
++from ceilometer.agent import plugin_base
++from ceilometer.i18n import _
++from ceilometer import sample
++
++OPTS = [
++    cfg.StrOpt('vswitch_control_exchange',
++               default='vswitch',
++               help="Exchange name for WRS vSwitch notifications",
++               deprecated_for_removal=True,
++               deprecated_reason="Use notification_control_exchanges instead"),
++]
++
++LOG = log.getLogger(__name__)
++
++
++class VSwitchNotificationBase(plugin_base.NotificationBase):
++
++    def get_targets(self, conf):
++        # Return a sequence of oslo.messaging.Target
++        # Sequence defining the exchange and topics to be connected for this
++        # plugin.
++
++        return [oslo_messaging.Target(topic=topic,
++                                      exchange=conf.vswitch_control_exchange)
++                for topic in self.get_notification_topics(conf)]
++
++
++class Engine(VSwitchNotificationBase):
++    """Convert vswitch engine metering notifications into samples.
++
++    """
++    event_types = ['vswitch.meter.engine']
++
++    def process_notification(self, message):
++        try:
++            name = 'vswitch.engine.util'
++            info = {
++                'project_id': None,
++                'resource_id': message['payload']['uuid'],
++                'timestamp': message['timestamp'],
++                'resource_metadata': {
++                    'cpu_id': message['payload'].get('cpu_id', None),
++                    'host': message['payload'].get('host', None)
++                },
++                'user_id': None
++            }
++            yield sample.Sample(
++                name=name,
++                type=sample.TYPE_GAUGE,
++                unit='%',
++                volume=float(message['payload']['cpu_util']),
++                **info)
++        except Exception as err:
++            LOG.warning(_('An error occured while building %(m)s '
++                          'sample: %(e)s') % {'m': name, 'e': err})
++
++
++class Port(VSwitchNotificationBase):
++    """Convert vswitch port metering notifications into samples.
++
++    """
++    event_types = ['vswitch.meter.port']
++
++    def process_notification(self, message):
++        LOG.debug('vswitch port notification %r', message)
++
++        try:
++            info = {
++                'project_id': message['payload']['tenant_id'],
++                'resource_id': message['payload']['uuid'],
++                'timestamp': message['timestamp'],
++                'resource_metadata': {
++                    'network_id': message['payload']['network_id'],
++                    'link-speed': message['payload']['link-speed'],
++                    'host': message['payload']['host']
++                },
++                'user_id': None
++            }
++        except Exception as err:
++            LOG.warning(_('An error occured while building '
++                          'sample info: %(e)s') % {'e': err})
++            return
++
++        name = 'vswitch.port.receive.bytes'
++        try:
++            yield sample.Sample(
++                name=name,
++                type=sample.TYPE_CUMULATIVE,
++                unit='B',
++                volume=long(message['payload']['rx-bytes']),
++                **info)
++        except Exception as err:
++            LOG.warning(_('An error occured while building %(m)s '
++                          'sample: %(e)s') % {'m': name, 'e': err})
++
++        name = 'vswitch.port.transmit.bytes'
++        try:
++            yield sample.Sample(
++                name=name,
++                type=sample.TYPE_CUMULATIVE,
++                unit='B',
++                volume=long(message['payload']['tx-bytes']),
++                **info)
++        except Exception as err:
++            LOG.warning(_('An error occured while building %(m)s '
++                          'sample: %(e)s') % {'m': name, 'e': err})
++
++        name = 'vswitch.port.receive.packets'
++        try:
++            yield sample.Sample(
++                name=name,
++                type=sample.TYPE_CUMULATIVE,
++                unit='packet',
++                volume=long(message['payload']['rx-packets']),
++                **info)
++        except Exception as err:
++            LOG.warning(_('An error occured while building %(m)s '
++                          'sample: %(e)s') % {'m': name, 'e': err})
++
++        name = 'vswitch.port.transmit.packets'
++        try:
++            yield sample.Sample(
++                name=name,
++                type=sample.TYPE_CUMULATIVE,
++                unit='packet',
++                volume=long(message['payload']['tx-packets']),
++                **info)
++        except Exception as err:
++            LOG.warning(_('An error occured while building %(m)s '
++                          'sample: %(e)s') % {'m': name, 'e': err})
++
++        name = 'vswitch.port.receive.util'
++        try:
++            if message['payload']['rx-util'] is not None:
++                yield sample.Sample(
++                    name=name,
++                    type=sample.TYPE_GAUGE,
++                    unit='%',
++                    volume=float(message['payload']['rx-util']),
++                    **info)
++        except Exception as err:
++            LOG.warning(_('An error occured while building %(m)s '
++                          'sample: %(e)s') % {'m': name, 'e': err})
++
++        name = 'vswitch.port.transmit.util'
++        try:
++            if message['payload']['tx-util'] is not None:
++                yield sample.Sample(
++                    name=name,
++                    type=sample.TYPE_GAUGE,
++                    unit='%',
++                    volume=float(message['payload']['tx-util']),
++                    **info)
++        except Exception as err:
++            LOG.warning(_('An error occured while building %(m)s '
++                          'sample: %(e)s') % {'m': name, 'e': err})
++
++        name = 'vswitch.port.receive.errors'
++        try:
++            if long(message['payload']['rx-errors']) > 0:
++                yield sample.Sample(
++                    name=name,
++                    type=sample.TYPE_CUMULATIVE,
++                    unit='packet',
++                    volume=long(message['payload']['rx-errors']),
++                    **info)
++        except Exception as err:
++            LOG.warning(_('An error occured while building %(m)s '
++                          'sample: %(e)s') % {'m': name, 'e': err})
++
++        name = 'vswitch.port.transmit.errors'
++        try:
++            if long(message['payload']['tx-errors']) > 0:
++                yield sample.Sample(
++                    name=name,
++                    type=sample.TYPE_CUMULATIVE,
++                    unit='packet',
++                    volume=long(message['payload']['tx-errors']),
++                    **info)
++        except Exception as err:
++            LOG.warning(_('An error occured while building %(m)s '
++                          'sample: %(e)s') % {'m': name, 'e': err})
+diff --git a/setup.cfg b/setup.cfg
+index baa96c5..2647ab9 100644
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -44,6 +44,8 @@ zaqar =
+ 
+ [entry_points]
+ ceilometer.notification =
++    vswitch.meter.engine = ceilometer.vswitch.notifications:Engine
++    vswitch.meter.port = ceilometer.vswitch.notifications:Port
+     http.request = ceilometer.middleware:HTTPRequest
+     http.response = ceilometer.middleware:HTTPResponse
+     hardware.ipmi.temperature = ceilometer.ipmi.notifications.ironic:TemperatureSensorNotification
+-- 
+2.7.4
+

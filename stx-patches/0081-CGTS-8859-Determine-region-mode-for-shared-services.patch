@@ -1,0 +1,169 @@
+From 426e54eefd8037c09214564bc854fff19a7da0fc Mon Sep 17 00:00:00 2001
+From: Al Bailey <Al.Bailey@windriver.com>
+Date: Wed, 21 Feb 2018 12:15:20 -0600
+Subject: [PATCH 81/91] CGTS-8859 Determine region mode for shared services
+
+This ensures that the correct region is used for the ceilometer clients when interacting with shared services
+This commit required a puppet change.
+---
+ ceilometer/image/discovery.py  | 13 ++++++++++++-
+ ceilometer/neutron_client.py   | 13 ++++++++++++-
+ ceilometer/nova_client.py      | 15 +++++++++++++--
+ ceilometer/opts.py             |  7 +++++++
+ ceilometer/volume/discovery.py | 13 ++++++++++++-
+ 5 files changed, 56 insertions(+), 5 deletions(-)
+
+diff --git a/ceilometer/image/discovery.py b/ceilometer/image/discovery.py
+index 5dcf475..bbe2a2e 100644
+--- a/ceilometer/image/discovery.py
++++ b/ceilometer/image/discovery.py
+@@ -24,6 +24,17 @@ SERVICE_OPTS = [
+ ]
+ 
+ 
++def _get_region_name(conf, service_type):
++    reg = conf.region_name_for_services
++    # If Shared Services configured, override region for image/volumes
++    shared_services_region_name = conf.region_name_for_shared_services
++    shared_services_types = conf.shared_services_types
++    if shared_services_region_name:
++        if service_type in shared_services_types:
++            reg = shared_services_region_name
++    return reg
++
++
+ class ImagesDiscovery(plugin_base.DiscoveryBase):
+     def __init__(self, conf):
+         super(ImagesDiscovery, self).__init__(conf)
+@@ -31,7 +42,7 @@ class ImagesDiscovery(plugin_base.DiscoveryBase):
+         self.glance_client = glanceclient.Client(
+             version='2',
+             session=keystone_client.get_session(conf),
+-            region_name=creds.region_name,
++            region_name=_get_region_name(conf, conf.service_types.glance),
+             interface=creds.interface,
+             service_type=conf.service_types.glance)
+ 
+diff --git a/ceilometer/neutron_client.py b/ceilometer/neutron_client.py
+index 837fced..ce1c8dc 100644
+--- a/ceilometer/neutron_client.py
++++ b/ceilometer/neutron_client.py
+@@ -34,6 +34,17 @@ SERVICE_OPTS = [
+ LOG = log.getLogger(__name__)
+ 
+ 
++def _get_region_name(conf, service_type):
++    reg = conf.region_name_for_services
++    # If Shared Services configured, override region for image/volumes
++    shared_services_region_name = conf.region_name_for_shared_services
++    shared_services_types = conf.shared_services_types
++    if shared_services_region_name:
++        if service_type in shared_services_types:
++            reg = shared_services_region_name
++    return reg
++
++
+ def logged(func):
+ 
+     @functools.wraps(func)
+@@ -61,7 +72,7 @@ class Client(object):
+         params = {
+             'session': keystone_client.get_session(conf),
+             'endpoint_type': creds.interface,
+-            'region_name': creds.region_name,
++            'region_name': _get_region_name(conf, conf.service_types.neutron),
+             'service_type': conf.service_types.neutron,
+         }
+         self.client = clientv20.Client(**params)
+diff --git a/ceilometer/nova_client.py b/ceilometer/nova_client.py
+index e7e45c5..013fd34 100644
+--- a/ceilometer/nova_client.py
++++ b/ceilometer/nova_client.py
+@@ -63,6 +63,17 @@ def logged(func):
+     return with_logging
+ 
+ 
++def _get_region_name(conf, service_type):
++    reg = conf.region_name_for_services
++    # If Shared Services configured, override region for image/volumes
++    shared_services_region_name = conf.region_name_for_shared_services
++    shared_services_types = conf.shared_services_types
++    if shared_services_region_name:
++        if service_type in shared_services_types:
++            reg = shared_services_region_name
++    return reg
++
++
+ class Client(object):
+     """A client which gets information via python-novaclient."""
+ 
+@@ -81,7 +92,7 @@ class Client(object):
+             session=ks_session,
+ 
+             # nova adapter options
+-            region_name=creds.region_name,
++            region_name=_get_region_name(conf, conf.service_types.nova),
+             endpoint_type=creds.interface,
+             service_type=conf.service_types.nova,
+             logger=logger)
+@@ -89,7 +100,7 @@ class Client(object):
+         self.glance_client = glanceclient.Client(
+             version='2',
+             session=ks_session,
+-            region_name=creds.region_name,
++            region_name=_get_region_name(conf, conf.service_types.glance),
+             interface=creds.interface,
+             service_type=conf.service_types.glance)
+ 
+diff --git a/ceilometer/opts.py b/ceilometer/opts.py
+index 93a1253..48d0f12 100644
+--- a/ceilometer/opts.py
++++ b/ceilometer/opts.py
+@@ -74,6 +74,13 @@ OPTS = [
+                min=1,
+                help='Maximum number of parallel requests for '
+                'services to handle at the same time.'),
++    cfg.StrOpt('region_name_for_services',
++               help='Default region name used to get services endpoints.'),
++    cfg.StrOpt('region_name_for_shared_services',
++               help='Default region name for shared services endpoints.'),
++    cfg.ListOpt('shared_services_types',
++                default=['image', 'volume', 'volumev2', 'volumev3'],
++                help='The shared services located in the other region.'),
+ ]
+ 
+ 
+diff --git a/ceilometer/volume/discovery.py b/ceilometer/volume/discovery.py
+index 9dfc12a..6762b8e 100644
+--- a/ceilometer/volume/discovery.py
++++ b/ceilometer/volume/discovery.py
+@@ -24,6 +24,17 @@ SERVICE_OPTS = [
+ ]
+ 
+ 
++def _get_region_name(conf, service_type):
++    reg = conf.region_name_for_services
++    # If Shared Services configured, override region for image/volumes
++    shared_services_region_name = conf.region_name_for_shared_services
++    shared_services_types = conf.shared_services_types
++    if shared_services_region_name:
++        if service_type in shared_services_types:
++            reg = shared_services_region_name
++    return reg
++
++
+ class _BaseDiscovery(plugin_base.DiscoveryBase):
+     def __init__(self, conf):
+         super(_BaseDiscovery, self).__init__(conf)
+@@ -31,7 +42,7 @@ class _BaseDiscovery(plugin_base.DiscoveryBase):
+         self.client = cinder_client.Client(
+             version='3',
+             session=keystone_client.get_session(conf),
+-            region_name=creds.region_name,
++            region_name=_get_region_name(conf, conf.service_types.cinder),
+             interface=creds.interface,
+             service_type=conf.service_types.cinder
+         )
+-- 
+2.7.4
+

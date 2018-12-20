@@ -1,0 +1,205 @@
+From 07df18d48e1c984ed020c8183099f3fe9306d54e Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Wed, 11 Jan 2017 16:38:25 -0500
+Subject: [PATCH 07/91] US103891: Pike Rebase. Adding controller.yaml to
+ ceilometer-common  RPM
+
+   Fix: Change the publisher to gnocchi and remove interval in the controller.yaml
+
+This squash includes the commits:
+
+1. Rebase. Newton. Port: adding controller.yaml to ceilometer-common RPM
+   This temporarily helps packstack and puppet complete config_controller manifest application
+
+2. Rebase. Newton. yaml file changes to support ceilometer events
+---
+ ceilometer/pipeline/data/pipeline.yaml |  30 +++++----
+ etc/ceilometer/controller.yaml         | 119 +++++++++++++++++++++++++++++++++
+ 2 files changed, 136 insertions(+), 13 deletions(-)
+ create mode 100644 etc/ceilometer/controller.yaml
+
+diff --git a/ceilometer/pipeline/data/pipeline.yaml b/ceilometer/pipeline/data/pipeline.yaml
+index a3e09ce..fc0ba63 100644
+--- a/ceilometer/pipeline/data/pipeline.yaml
++++ b/ceilometer/pipeline/data/pipeline.yaml
+@@ -1,4 +1,3 @@
+----
+ sources:
+     - name: meter_source
+       meters:
+@@ -10,6 +9,11 @@ sources:
+           - "cpu"
+       sinks:
+           - cpu_sink
++    - name: vcpu_source
++      interval: 30
++      meters:
++          - "vcpu"
++      sinks:
+           - cpu_delta_sink
+     - name: disk_source
+       meters:
+@@ -31,13 +35,19 @@ sources:
+           - "network.outgoing.packets"
+       sinks:
+           - network_sink
+-    - name: csv_source
+-      interval: 300
+-      meters:
+-          - "!vswitch.*"
+-      sinks:
+-          - csv_sink
+ sinks:
++    - name: udp_sink
++      transformers:
++          - name: "average_filter"
++            parameters:
++              target:
++                  name: "cpu_util"
++                  unit: "%"
++                  type: "gauge"
++                  scale: "1.0"
++                  tau: 60.0
++      publishers:
++          - udp://controller:31415
+     - name: meter_sink
+       transformers:
+       publishers:
+@@ -93,9 +103,3 @@ sinks:
+                     type: "gauge"
+       publishers:
+           - gnocchi://
+-    - name: csv_sink
+-      meters:
+-          - "!vswitch.*"
+-      transformers:
+-      publishers:
+-          - csvfile:///opt/cgcs/ceilometer/csv/pm.csv?max_bytes=10000000&backup_count=5
+diff --git a/etc/ceilometer/controller.yaml b/etc/ceilometer/controller.yaml
+new file mode 100644
+index 0000000..d386c82
+--- /dev/null
++++ b/etc/ceilometer/controller.yaml
+@@ -0,0 +1,119 @@
++sources:
++    - name: vswitch_nova
++      meters:
++          - "vswitch.engine.util"
++      sinks:
++          - udp_sink
++    - name: meter_source
++      meters:
++          - "*"
++      sinks:
++          - meter_sink
++          - csv_sink
++    - name: cpu_source
++      meters:
++          - "cpu"
++      sinks:
++          - cpu_sink
++          - csv_sink
++    - name: vcpu_source
++      interval: 30
++      meters:
++          - "vcpu"
++      sinks:
++          - vcpu_sink
++          - csv_sink
++    - name: disk_source
++      meters:
++          - "disk.read.bytes"
++          - "disk.read.requests"
++          - "disk.write.bytes"
++          - "disk.write.requests"
++          - "disk.device.read.bytes"
++          - "disk.device.read.requests"
++          - "disk.device.write.bytes"
++          - "disk.device.write.requests"
++      sinks:
++          - disk_sink
++          - csv_sink
++    - name: network_source
++      meters:
++          - "network.incoming.bytes"
++          - "network.incoming.packets"
++          - "network.outgoing.bytes"
++          - "network.outgoing.packets"
++      sinks:
++          - network_sink
++          - csv_sink
++sinks:
++    - name: udp_sink
++      transformers:
++          - name: "average_filter"
++            parameters:
++              target:
++                  name: "cpu_util"
++                  unit: "%"
++                  type: "gauge"
++                  scale: "1.0"
++                  tau: 60.0
++      publishers:
++          - udp://controller:31415
++    - name: meter_sink
++      transformers:
++      publishers:
++          - gnocchi://
++    - name: cpu_sink
++      transformers:
++          - name: "rate_of_change"
++            parameters:
++                target:
++                    name: "cpu_util"
++                    unit: "%"
++                    type: "gauge"
++                    scale: "100.0 / (10**9 * (resource_metadata.cpu_number or 1))"
++      publishers:
++          - gnocchi://
++    - name: vcpu_sink
++      transformers:
++          - name: "rate_of_change"
++            parameters:
++                target:
++                    name: "vcpu_util"
++                    unit: "%"
++                    type: "gauge"
++                    scale: "100.0 / (10**9 * (resource_metadata.vcpu_number or 1))"
++      publishers:
++          - gnocchi://
++    - name: disk_sink
++      transformers:
++          - name: "rate_of_change"
++            parameters:
++                source:
++                    map_from:
++                        name: "(disk\\.device|disk)\\.(read|write)\\.(bytes|requests)"
++                        unit: "(B|request)"
++                target:
++                    map_to:
++                        name: "\\1.\\2.\\3.rate"
++                        unit: "\\1/s"
++                    type: "gauge"
++      publishers:
++          - gnocchi://
++    - name: network_sink
++      transformers:
++          - name: "rate_of_change"
++            parameters:
++                source:
++                   map_from:
++                       name: "network\\.(incoming|outgoing)\\.(bytes|packets)"
++                       unit: "(B|packet)"
++                target:
++                    map_to:
++                        name: "network.\\1.\\2.rate"
++                        unit: "\\1/s"
++                    type: "gauge"
++      publishers:
++          - gnocchi://
++    - name: csv_sink
++      publishers:
++          - csvfile:///opt/cgcs/ceilometer/csv/pm.csv?max_bytes=10000000&backup_count=5&compress=True&enabled=True
+-- 
+2.7.4
+

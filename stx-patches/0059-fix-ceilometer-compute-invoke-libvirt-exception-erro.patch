@@ -1,0 +1,141 @@
+From 356324bcb9a36ad44f57497ce4974e8723dcc340 Mon Sep 17 00:00:00 2001
+From: xiexianbin <xiexianbin@yovole.com>
+Date: Fri, 3 Nov 2017 17:27:31 +0800
+Subject: [PATCH 59/91] fix ceilometer-compute invoke libvirt exception error
+
+when nova compute start vm not create by nova-compute,
+the ceilometer-compute will occur libvirtError: "metadata
+not found: Requested metadata element is not present".
+and cause all vm meter not report.
+
+(cherry picked from commit c477678e574a0a4c06dd29af2dbf9f58ec934b9a)
+
+Change-Id: Id71788606bc0da9a7959831fb90d13c25c0b8dcb
+---
+ ceilometer/compute/discovery.py                 | 17 +++++--
+ ceilometer/tests/unit/compute/test_discovery.py | 61 +++++++++++++++++++++++++
+ 2 files changed, 74 insertions(+), 4 deletions(-)
+
+diff --git a/ceilometer/compute/discovery.py b/ceilometer/compute/discovery.py
+index 6b25caa..fe77eba 100644
+--- a/ceilometer/compute/discovery.py
++++ b/ceilometer/compute/discovery.py
+@@ -147,12 +147,21 @@ class InstanceDiscovery(plugin_base.DiscoveryBase):
+     def discover_libvirt_polling(self, manager, param=None):
+         instances = []
+         for domain in self.connection.listAllDomains():
++            try:
++                xml_string = domain.metadata(
++                    libvirt.VIR_DOMAIN_METADATA_ELEMENT,
++                    "http://openstack.org/xmlns/libvirt/nova/1.0")
++            except libvirt.libvirtError as e:
++                if libvirt_utils.is_disconnection_exception(e):
++                    # Re-raise the exception so it's handled and retries
++                    raise
++                LOG.error(
++                    "Fail to get domain uuid %s metadata, libvirtError: %s",
++                    domain.UUIDString(), e.message)
++                continue
++
+             full_xml = etree.fromstring(domain.XMLDesc())
+             os_type_xml = full_xml.find("./os/type")
+-
+-            xml_string = domain.metadata(
+-                libvirt.VIR_DOMAIN_METADATA_ELEMENT,
+-                "http://openstack.org/xmlns/libvirt/nova/1.0")
+             metadata_xml = etree.fromstring(xml_string)
+ 
+             # TODO(sileht): We don't have the flavor ID here So the Gnocchi
+diff --git a/ceilometer/tests/unit/compute/test_discovery.py b/ceilometer/tests/unit/compute/test_discovery.py
+index 3eae5ea..33fe9aa 100644
+--- a/ceilometer/tests/unit/compute/test_discovery.py
++++ b/ceilometer/tests/unit/compute/test_discovery.py
+@@ -15,6 +15,12 @@ import datetime
+ import fixtures
+ import iso8601
+ import mock
++import testtools
++
++try:
++    import libvirt
++except ImportError:
++    libvirt = None
+ 
+ from ceilometer.compute import discovery
+ from ceilometer.compute.pollsters import util
+@@ -58,6 +64,21 @@ LIBVIRT_DESC_XML = """
+ </domain>
+ """
+ 
++LIBVIRT_MANUAL_INSTANCE_DESC_XML = """
++<domain type='kvm' id='1'>
++  <name>Manual-instance-00000001</name>
++  <uuid>5e637d0d-8c0e-441a-a11a-a9dc95aed84e</uuid>
++  <os>
++    <type arch='x86_64' machine='pc-i440fx-xenial'>hvm</type>
++    <kernel>/opt/instances/5e637d0d-8c0e-441a-a11a-a9dc95aed84e/kernel</kernel>
++    <initrd>/opt/instances/5e637d0d-8c0e-441a-a11a-a9dc95aed84e/ramdisk</initrd>
++    <cmdline>root=/dev/vda console=tty0 console=ttyS0</cmdline>
++    <boot dev='hd'/>
++    <smbios mode='sysinfo'/>
++  </os>
++</domain>
++"""
++
+ 
+ class FakeDomain(object):
+     def state(self):
+@@ -81,6 +102,33 @@ class FakeConn(object):
+         return [FakeDomain()]
+ 
+ 
++class FakeManualInstanceDomain(object):
++    def state(self):
++        return [1, 2]
++
++    def name(self):
++        return "Manual-instance-00000001"
++
++    def UUIDString(self):
++        return "5e637d0d-8c0e-441a-a11a-a9dc95aed84e"
++
++    def XMLDesc(self):
++        return LIBVIRT_MANUAL_INSTANCE_DESC_XML
++
++    def metadata(self, flags, url):
++        # Note(xiexianbin): vm not create by nova-compute don't have metadata
++        # elements like: '<nova:instance
++        #  xmlns:nova="http://openstack.org/xmlns/libvirt/nova/1.0">'
++        # When invoke get metadata method, raise libvirtError.
++        raise libvirt.libvirtError(
++            "metadata not found: Requested metadata element is not present")
++
++
++class FakeManualInstanceConn(object):
++    def listAllDomains(self):
++        return [FakeManualInstanceDomain()]
++
++
+ class TestDiscovery(base.BaseTestCase):
+ 
+     def setUp(self):
+@@ -236,3 +284,16 @@ class TestDiscovery(base.BaseTestCase):
+                           mock.call('test', None)]
+         self.assertEqual(expected_calls,
+                          self.client.instance_get_all_by_host.call_args_list)
++
++    @testtools.skipUnless(libvirt, "libvirt not available")
++    @mock.patch.object(utils, "libvirt")
++    @mock.patch.object(discovery, "libvirt")
++    def test_discovery_with_libvirt_error(self, libvirt, libvirt2):
++        self.CONF.set_override("instance_discovery_method",
++                               "libvirt_metadata",
++                               group="compute")
++        libvirt.VIR_DOMAIN_METADATA_ELEMENT = 2
++        libvirt2.openReadOnly.return_value = FakeManualInstanceConn()
++        dsc = discovery.InstanceDiscovery(self.CONF)
++        resources = dsc.discover(mock.MagicMock())
++        self.assertEqual(0, len(resources))
+-- 
+2.7.4
+

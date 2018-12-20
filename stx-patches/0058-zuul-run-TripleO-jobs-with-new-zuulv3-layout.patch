@@ -1,0 +1,47 @@
+From 6b6d6a5972b6cdd8fd7dafde4fc60daff7f2f64d Mon Sep 17 00:00:00 2001
+From: Emilien Macchi <emilien@redhat.com>
+Date: Fri, 17 Nov 2017 11:04:21 -0800
+Subject: [PATCH 58/91] zuul: run TripleO jobs with new zuulv3 layout
+
+Configure the layout to execute the scenario001 and 002 jobs.
+Note that baremetal job will be run on stable/pike and container on
+Queens and beyond.
+
+A note has been added in comment explaining more details.
+
+Change-Id: Ic9fc3bd769a5ccafb3f81fe55513c96d611dbe7d
+(cherry picked from commit 510d1c7740a5829e07979ec384bdbb7d94ad2870)
+---
+ .zuul.yaml | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/.zuul.yaml b/.zuul.yaml
+index 5bb2ba3..9de3a88 100644
+--- a/.zuul.yaml
++++ b/.zuul.yaml
+@@ -100,6 +100,22 @@
+               - ^setup.cfg$
+         - telemetry-dsvm-integration-ceilometer
+         - ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only
++        # TripleO jobs that deploy Telemetry.
++        # Note we don't use a project-template here, so it's easier
++        # to disable voting on one specific job if things go wrong.
++        # tripleo-ci-centos-7-scenario00(1|2)-multinode-oooq will only
++        # run on stable/pike while the -container will run in Queens
++        # and beyond.
++        # If you need any support to debug these jobs in case of
++        # failures, please reach us on #tripleo IRC channel.
++        - tripleo-ci-centos-7-scenario001-multinode-oooq:
++            voting: false
++        - tripleo-ci-centos-7-scenario001-multinode-oooq-container:
++            voting: false
++        - tripleo-ci-centos-7-scenario002-multinode-oooq:
++            voting: false
++        - tripleo-ci-centos-7-scenario002-multinode-oooq-container:
++            voting: false
+     gate:
+       jobs:
+         - ceilometer-dsvm-tempest-plugin-mongodb
+-- 
+2.7.4
+

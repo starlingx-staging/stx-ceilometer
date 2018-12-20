@@ -1,0 +1,38 @@
+From c7d539274f3b4fe24094b42e3cc858da44560e90 Mon Sep 17 00:00:00 2001
+From: David Rabel <rabel@b1-systems.de>
+Date: Tue, 31 Oct 2017 19:35:36 +0100
+Subject: [PATCH 51/91] Fix Format in contributor/plugins.rst
+
+Change-Id: Ic6279d8f1435796b0c3c81047ad4bb5d2d0b3d28
+(cherry picked from commit 32d09cbcd748a0ee413f4e99f82976c8091f52f7)
+---
+ doc/source/contributor/plugins.rst | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/doc/source/contributor/plugins.rst b/doc/source/contributor/plugins.rst
+index bc563d2..76b3d73 100644
+--- a/doc/source/contributor/plugins.rst
++++ b/doc/source/contributor/plugins.rst
+@@ -126,13 +126,13 @@ Notifications are defined as subclass of the
+ :class:`ceilometer.agent.plugin_base.NotificationBase` meta class.
+ Notifications must implement:
+ 
+-   ``event_types``
+-      A sequence of strings defining the event types to be given to the plugin
++``event_types``
++   A sequence of strings defining the event types to be given to the plugin
+ 
+-   ``process_notification(self, message)`` 
+-      Receives an event message from the list provided to ``event_types`` and
+-      returns a sequence of ``Sample`` objects as defined in the
+-      :file:`ceilometer/sample.py` file.
++``process_notification(self, message)`` 
++   Receives an event message from the list provided to ``event_types`` and
++   returns a sequence of ``Sample`` objects as defined in the
++   :file:`ceilometer/sample.py` file.
+ 
+ In the ``InstanceNotifications`` plugin, it listens to three events:
+ 
+-- 
+2.7.4
+

@@ -1,0 +1,32 @@
+From a33aa53ec732f71f83bebec84e83aea16e45e9b5 Mon Sep 17 00:00:00 2001
+From: gordon chung <gord@live.ca>
+Date: Mon, 6 Nov 2017 18:02:13 +0000
+Subject: [PATCH 54/91] Revert "devstack: Set an optimal processing queue"
+
+This reverts commit f1bdf6751a503ee570ce114f9a31fdb2959a79d0.
+
+this causes distribution to be either 50/50 or 100/0. in the latter
+case, the single worker usually fails to process pipeline queues in a
+timely manner
+
+Change-Id: I7c34acb29290de641ccbef4844e1e6982fe8b173
+(cherry picked from commit 0dbdd043c4d4a62e66fc69ebfdbc7c6e1db243a3)
+---
+ devstack/plugin.sh | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/devstack/plugin.sh b/devstack/plugin.sh
+index 04e8674..d02da30 100644
+--- a/devstack/plugin.sh
++++ b/devstack/plugin.sh
+@@ -338,7 +338,6 @@ function configure_ceilometer {
+         iniset $CEILOMETER_CONF coordination backend_url $CEILOMETER_COORDINATION_URL
+         iniset $CEILOMETER_CONF notification workload_partitioning True
+         iniset $CEILOMETER_CONF notification workers $API_WORKERS
+-        iniset $CEILOMETER_CONF notification pipeline_processing_queues $API_WORKERS
+     fi
+ 
+     if [[ -n "$CEILOMETER_CACHE_BACKEND" ]]; then
+-- 
+2.7.4
+

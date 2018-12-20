@@ -1,0 +1,54 @@
+From 077b0157c73d8201a2df9c128732cdc7c8ce7d13 Mon Sep 17 00:00:00 2001
+From: "SU, HAO-CHEN" <g0010726@gmail.com>
+Date: Fri, 15 Dec 2017 03:37:40 +0000
+Subject: [PATCH 67/91] [doc] frequency of polling should be controlled via the
+ polling configuration
+
+In the architecture doc:
+
+  'The frequency of polling is controlled via the pipeline configuration.
+   See Pipelines for details'
+
+should be changed to:
+
+  'The frequency of polling is controlled via the polling configuration.
+   See Pollings for details'
+
+Change-Id: I34cfac4555801139700e55aaec24fcf98ee432c1
+(cherry picked from commit 4257ff72bff74511be8e08bdaa4f8323fe7507b0)
+---
+ doc/source/admin/telemetry-data-collection.rst | 2 ++
+ doc/source/contributor/architecture.rst        | 4 ++--
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/doc/source/admin/telemetry-data-collection.rst b/doc/source/admin/telemetry-data-collection.rst
+index 7890389..2306fcb 100644
+--- a/doc/source/admin/telemetry-data-collection.rst
++++ b/doc/source/admin/telemetry-data-collection.rst
+@@ -302,6 +302,8 @@ between two ``datetime`` fields from one notification.
+     project_id: $.payload.tenant_id
+     resource_id: $.payload.instance_id
+ 
++.. _Polling-Configuration:
++
+ Polling
+ ~~~~~~~
+ 
+diff --git a/doc/source/contributor/architecture.rst b/doc/source/contributor/architecture.rst
+index 63b40f0..496e630 100644
+--- a/doc/source/contributor/architecture.rst
++++ b/doc/source/contributor/architecture.rst
+@@ -134,8 +134,8 @@ daemon is configured to run one or more *pollster* plugins using any
+ combination of ``ceilometer.poll.compute``, ``ceilometer.poll.central``, and
+ ``ceilometer.poll.ipmi`` namespaces
+ 
+-The frequency of polling is controlled via the pipeline configuration. See
+-:ref:`Pipeline-Configuration` for details. The agent framework then passes the
++The frequency of polling is controlled via the polling configuration. See
++:ref:`Polling-Configuration` for details. The agent framework then passes the
+ generated samples to the notification agent for processing.
+ 
+ 
+-- 
+2.7.4
+

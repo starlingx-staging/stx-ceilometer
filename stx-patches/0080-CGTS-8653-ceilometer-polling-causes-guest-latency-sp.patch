@@ -1,0 +1,37 @@
+From dd5bd751caae23b41be4ecba34e5ed46fadac15c Mon Sep 17 00:00:00 2001
+From: Alex Kozyrev <alex.kozyrev@windriver.com>
+Date: Wed, 14 Feb 2018 14:00:08 -0500
+Subject: [PATCH 80/91] CGTS-8653: ceilometer polling causes guest latency
+ spikes on low-latency profile Disable memory.usage and memory.resident
+ ceilometer meters as they affect VM entry latency. Set cpu meter interval
+ back to 300 seconds as it was before Pike rebase.
+
+---
+ etc/ceilometer/polling.yaml | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/etc/ceilometer/polling.yaml b/etc/ceilometer/polling.yaml
+index bb50bd5..83876b6 100644
+--- a/etc/ceilometer/polling.yaml
++++ b/etc/ceilometer/polling.yaml
+@@ -3,8 +3,6 @@ sources:
+     - name: instance_pollster
+       interval: 600
+       meters:
+-        - memory.usage
+-        - memory.resident
+         - disk.read.bytes
+         - disk.read.bytes.rate
+         - disk.read.requests
+@@ -17,7 +15,7 @@ sources:
+         - disk.allocation
+         - disk.usage
+     - name: instance_cpu_pollster
+-      interval: 30
++      interval: 300
+       meters:
+         - cpu
+     - name: instance_disk_pollster
+-- 
+2.7.4
+

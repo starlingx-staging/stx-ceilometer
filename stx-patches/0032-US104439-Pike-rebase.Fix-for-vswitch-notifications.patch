@@ -1,0 +1,72 @@
+From 4f4e986be668bce5327b0eb9280a38bb545d4314 Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Wed, 15 Nov 2017 20:35:00 -0500
+Subject: [PATCH 32/91] US104439: Pike rebase.Fix for vswitch notifications
+
+Get the timestamp from metadata based on the new vswitch notification messages.
+---
+ ceilometer/tests/unit/vswitch/test_notifications.py |  5 +++--
+ ceilometer/vswitch/notifications.py                 | 10 ++++------
+ 2 files changed, 7 insertions(+), 8 deletions(-)
+
+diff --git a/ceilometer/tests/unit/vswitch/test_notifications.py b/ceilometer/tests/unit/vswitch/test_notifications.py
+index ccaebc4..e3e3873 100644
+--- a/ceilometer/tests/unit/vswitch/test_notifications.py
++++ b/ceilometer/tests/unit/vswitch/test_notifications.py
+@@ -43,8 +43,9 @@ VSWITCH_ENGINE_UPDATE = {
+     },
+     u'priority': u'INFO',
+     u'publisher_id': u'compute.vswitch.wrs.com',
+-    u'message_id': u'6eccedba-120e-4db8-9735-2ad5f061e5ee',
+-    u'timestamp': u'2013-07-29 06:51:34.474815',
++    'metadata': {
++        'timestamp': u'2017-11-15 20:02:44.169173',
++        'message_id': u'b97fc96f-da2d-4211-9699-8d85995ee0c8'}
+ }
+ 
+ 
+diff --git a/ceilometer/vswitch/notifications.py b/ceilometer/vswitch/notifications.py
+index 73054e5..9532ba3 100644
+--- a/ceilometer/vswitch/notifications.py
++++ b/ceilometer/vswitch/notifications.py
+@@ -36,9 +36,7 @@ from ceilometer import sample
+ OPTS = [
+     cfg.StrOpt('vswitch_control_exchange',
+                default='vswitch',
+-               help="Exchange name for WRS vSwitch notifications",
+-               deprecated_for_removal=True,
+-               deprecated_reason="Use notification_control_exchanges instead"),
++               help="Exchange name for WRS vSwitch notifications")
+ ]
+ 
+ LOG = log.getLogger(__name__)
+@@ -72,7 +70,7 @@ class Engine(VSwitchNotificationBase):
+                 info = {
+                     'project_id': None,
+                     'resource_id': metrics['uuid'],
+-                    'timestamp': message['timestamp'],
++                    'timestamp': message['metadata']['timestamp'],
+                     'resource_metadata': {
+                         'cpu_id': metrics.get('cpu_id', None),
+                         'host': metrics.get('host', None)
+@@ -139,7 +137,7 @@ class Port(VSwitchNotificationBase):
+                 info = {
+                     'project_id': metrics['tenant_id'],
+                     'resource_id': metrics['uuid'],
+-                    'timestamp': message['timestamp'],
++                    'timestamp': message['metadata']['timestamp'],
+                     'resource_metadata': {
+                         'network_id': metrics['network_id'],
+                         'link-speed': metrics['link-speed'],
+@@ -269,7 +267,7 @@ class Interface(VSwitchNotificationBase):
+                 info = {
+                     'project_id': metrics['tenant_id'],
+                     'resource_id': metrics['uuid'],
+-                    'timestamp': message['timestamp'],
++                    'timestamp': message['metadata']['timestamp'],
+                     'resource_metadata': {
+                         'host': metrics['host'],
+                         'network_uuid': metrics['network_uuid']
+-- 
+2.7.4
+

@@ -1,0 +1,49 @@
+From 3ac51a1c0ad59e125a9825d536b507234c27359e Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Thu, 12 Jan 2017 09:39:53 -0500
+Subject: [PATCH 09/91] US103891: Pike Rebase. Port pipeline config file as a
+ CLI option
+
+---
+ ceilometer/api/app.py  | 7 +++++++
+ ceilometer/pipeline.py | 6 ++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/ceilometer/api/app.py b/ceilometer/api/app.py
+index c8ff1c4..8a42270 100644
+--- a/ceilometer/api/app.py
++++ b/ceilometer/api/app.py
+@@ -13,6 +13,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ import os
+ import uuid
+diff --git a/ceilometer/pipeline.py b/ceilometer/pipeline.py
+index 37c8209..efeef21 100644
+--- a/ceilometer/pipeline.py
++++ b/ceilometer/pipeline.py
+@@ -47,6 +47,12 @@ OPTS = [
+ ]
+ 
+ 
++# WRS: refer to oslo-config openstack bug: 1363808
++# register_cli_opts must come before register_opts
++conf = cfg.ConfigOpts()
++conf.register_cli_opts(OPTS)
++
++
+ LOG = log.getLogger(__name__)
+ 
+ 
+-- 
+2.7.4
+

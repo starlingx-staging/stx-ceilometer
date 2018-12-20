@@ -1,0 +1,33 @@
+From 8349a2bf881df8e690b67c5f91baf87c0b6bf9a0 Mon Sep 17 00:00:00 2001
+From: Jack Ding <jack.ding@windriver.com>
+Date: Wed, 11 Jan 2017 15:16:40 -0500
+Subject: [PATCH 02/91] US103891: Pike Rebase. CGTS-5501 disable ceilometer
+ meters for swift
+
+Disable storage.* meters.
+storage.* meters are for standard Swift.
+TiS uses Ceph Rados Gateway for Swift backend,
+which uses radosgw.* meters instead.
+---
+ setup.cfg | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/setup.cfg b/setup.cfg
+index 5857fd9..dd0addb 100644
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -160,11 +160,6 @@ ceilometer.poll.central =
+     rgw.objects.size = ceilometer.objectstore.rgw:ObjectsSizePollster
+     rgw.objects.containers = ceilometer.objectstore.rgw:ObjectsContainersPollster
+     rgw.usage = ceilometer.objectstore.rgw:UsagePollster
+-    storage.containers.objects = ceilometer.objectstore.swift:ContainersObjectsPollster
+-    storage.containers.objects.size = ceilometer.objectstore.swift:ContainersSizePollster
+-    storage.objects = ceilometer.objectstore.swift:ObjectsPollster
+-    storage.objects.size = ceilometer.objectstore.swift:ObjectsSizePollster
+-    storage.objects.containers = ceilometer.objectstore.swift:ObjectsContainersPollster
+     switch.port = ceilometer.network.statistics.port:PortPollster
+     switch.port.uptime = ceilometer.network.statistics.port:PortPollsterUptime
+     switch.port.receive.packets = ceilometer.network.statistics.port:PortPollsterReceivePackets
+-- 
+2.7.4
+

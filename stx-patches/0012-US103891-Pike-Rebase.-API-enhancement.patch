@@ -1,0 +1,489 @@
+From 69a4b62133fe80351d0d3acb1f0e782aa0ec2644 Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Thu, 12 Jan 2017 10:08:22 -0500
+Subject: [PATCH 12/91] US103891: Pike Rebase. API enhancement.
+
+This squash includes the following commits:
+
+1. Rebase. Mitaka. Port add new wrs-statistics API call
+commit: 8dec3cd5881
+
+Horizon makes multiple  meter-statistics calls in the daily usage report
+This API call allows all the meters to be queried in one API call.
+Some minor logging cleanup as well
+
+2. Rebase. Mitaka. Port new API call to get ceilometer meter types
+commit: 3ee187c70f0
+
+CGTS-3129  Provide a new API call to get ceilometer meter types
+
+ceilometer meter-list is too large, since it includes permutations related to resources
+This API call simply returns the much smaller list of meters themselves.
+
+The other 2 parts for this JIRA are in horizon and ceilometerclient
+
+3. Rebase. Mitaka. Port pass a meter name to meter list as a filter
+commit: 6a392400ed4
+
+CGTS-3129 Ability to pass a meter name to meter list as a filter
+
+By allowing a meter name to be passed to the internal API query for meter list,
+we can prevent the 500 limit from impacting meters being queried.
+This also allows the filter to work with the in memory database
+---
+ ceilometer/api/controllers/v2/meters.py     |  25 ++++++
+ ceilometer/api/controllers/v2/metertypes.py | 106 ++++++++++++++++++++++++
+ ceilometer/api/controllers/v2/root.py       |   4 +
+ ceilometer/api/controllers/v2/statistics.py | 120 ++++++++++++++++++++++++++++
+ ceilometer/storage/base.py                  |  14 ++++
+ ceilometer/storage/impl_sqlalchemy.py       |  37 ++++++++-
+ ceilometer/transformer/conversions.py       |  14 ++--
+ 7 files changed, 312 insertions(+), 8 deletions(-)
+ create mode 100644 ceilometer/api/controllers/v2/metertypes.py
+ create mode 100644 ceilometer/api/controllers/v2/statistics.py
+
+diff --git a/ceilometer/api/controllers/v2/meters.py b/ceilometer/api/controllers/v2/meters.py
+index 0a63a30..7ce1ad7 100644
+--- a/ceilometer/api/controllers/v2/meters.py
++++ b/ceilometer/api/controllers/v2/meters.py
+@@ -17,6 +17,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ import base64
+ import datetime
+@@ -474,6 +481,24 @@ class Meter(base.Base):
+                    source='openstack',
+                    )
+ 
++    # The following 4 methods are required to deal with adding to set
++    # ne and hash should be moved to Base
++    # All other subclasses of Base should implement eq and repr
++    def __repr__(self):
++        return "Meter(%s, %s)" % (self.name, self.meter_id)
++
++    def __eq__(self, other):
++        if isinstance(other, Meter):
++            return self.meter_id == other.meter_id
++        else:
++            return False
++
++    def __ne__(self, other):
++        return (not self.__eq__(other))
++
++    def __hash__(self):
++        return hash(self.__repr__())
++
+ 
+ class MetersController(rest.RestController):
+     """Works on meters."""
+diff --git a/ceilometer/api/controllers/v2/metertypes.py b/ceilometer/api/controllers/v2/metertypes.py
+new file mode 100644
+index 0000000..bbcffa7
+--- /dev/null
++++ b/ceilometer/api/controllers/v2/metertypes.py
+@@ -0,0 +1,106 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
++import pecan
++from pecan import rest
++from wsme import types as wtypes
++import wsmeext.pecan as wsme_pecan
++
++from ceilometer.api.controllers.v2 import base
++from ceilometer.api.controllers.v2.meters import MeterController
++from ceilometer.api.controllers.v2 import utils as v2_utils
++from ceilometer.api import rbac
++from ceilometer import sample
++
++from oslo_log import log
++
++
++LOG = log.getLogger(__name__)
++
++
++class MeterType(base.Base):
++    """The minimal representation for a meter"""
++
++    name = wtypes.text
++    "The unique name for the meter"
++
++    type = wtypes.Enum(str, *sample.TYPES)
++    "The meter type (see :ref:`measurements`)"
++
++    unit = wtypes.text
++    "The unit of measure"
++
++    def __init__(self, **kwargs):
++        super(MeterType, self).__init__(**kwargs)
++
++    def __repr__(self):
++        # for logging calls
++        return "MeterType (%s)" % self.name
++
++    # Next 3 functions are required for uniqueness
++    def __eq__(self, other):
++        if isinstance(other, MeterType):
++            return self.name == other.name
++        else:
++            return False
++
++    def __ne__(self, other):
++        return (not self.__eq__(other))
++
++    def __hash__(self):
++        return hash(self.__repr__())
++
++    @classmethod
++    def from_dict(cls, some_dict):
++        return cls(**(some_dict))
++
++    @classmethod
++    def sample(cls):
++        return cls(name='Sample')
++
++
++class MeterTypesController(rest.RestController):
++    """Works on metertypes."""
++
++    def get_metertypes(self):
++        return []
++
++    # Allow querying meter details about a specific meter
++    @pecan.expose()
++    def _lookup(self, meter_name, *remainder):
++        return MeterController(meter_name), remainder
++
++    @wsme_pecan.wsexpose([MeterType], [base.Query], int)
++    def get_all(self, q=[], limit=None):
++        """Return all known meters, based on the data recorded so far.
++
++        :param q: Filter rules for the meters to be returned.
++        :param limit: limit of the number of meter types to return.
++        """
++
++        rbac.enforce('get_meters', pecan.request)
++
++        q = q or []
++        # Timestamp field is not supported for Meter queries
++        lim = v2_utils.enforce_limit(limit)
++        kwargs = v2_utils.query_to_kwargs(
++            q, pecan.request.storage_conn.get_meter_types,
++            ['limit'], allow_timestamps=False)
++        return [MeterType.from_db_model(m)
++                for m in pecan.request.storage_conn.get_meter_types(limit=lim,
++                                                                    **kwargs)]
+diff --git a/ceilometer/api/controllers/v2/root.py b/ceilometer/api/controllers/v2/root.py
+index 4841a71..ad958b0 100644
+--- a/ceilometer/api/controllers/v2/root.py
++++ b/ceilometer/api/controllers/v2/root.py
+@@ -34,10 +34,12 @@ import pecan
+ from ceilometer.api.controllers.v2 import capabilities
+ from ceilometer.api.controllers.v2 import extensions
+ from ceilometer.api.controllers.v2 import meters
++from ceilometer.api.controllers.v2 import metertypes
+ from ceilometer.api.controllers.v2 import pipelines
+ from ceilometer.api.controllers.v2 import query
+ from ceilometer.api.controllers.v2 import resources
+ from ceilometer.api.controllers.v2 import samples
++from ceilometer.api.controllers.v2 import statistics
+ from ceilometer.i18n import _
+ from ceilometer import keystone_client
+ 
+@@ -105,7 +107,9 @@ class V2Controller(object):
+     """Version 2 API controller root."""
+ 
+     capabilities = capabilities.CapabilitiesController()
++    vars()['wrs-metertypes'] = metertypes.MeterTypesController()
+     vars()['wrs-pipelines'] = pipelines.PipelinesController()
++    vars()['wrs-statistics'] = statistics.StatisticsController()
+     extensions = extensions.ExtensionsController()
+ 
+     def __init__(self):
+diff --git a/ceilometer/api/controllers/v2/statistics.py b/ceilometer/api/controllers/v2/statistics.py
+new file mode 100644
+index 0000000..c49d93f
+--- /dev/null
++++ b/ceilometer/api/controllers/v2/statistics.py
+@@ -0,0 +1,120 @@
++#
++# Copyright 2012 New Dream Network, LLC (DreamHost)
++#
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
++import pecan
++from pecan import rest
++from wsme import types as wtypes
++import wsmeext.pecan as wsme_pecan
++
++from ceilometer.api.controllers.v2 import base
++from ceilometer.api.controllers.v2 import meters
++from ceilometer.api.controllers.v2.meters import Aggregate
++from ceilometer.api.controllers.v2 import utils as v2_utils
++from ceilometer.api import rbac
++from ceilometer.i18n import _
++from ceilometer import storage
++from ceilometer import utils
++
++from oslo_log import log
++from oslo_utils import timeutils
++
++LOG = log.getLogger(__name__)
++
++
++class ScopedStatistics(meters.Statistics):
++
++    meter_name = wtypes.text
++    "The unique name for the meter"
++
++    def __init__(self, meter_name,
++                 start_timestamp=None, end_timestamp=None, **kwds):
++        kwds['meter_name'] = meter_name
++        kwds['start_timestamp'] = start_timestamp
++        kwds['end_timestamp'] = end_timestamp
++        super(ScopedStatistics, self).__init__(**kwds)
++
++    def __repr__(self):
++        # for logging calls
++        return "ScopedStats(%s) " % self.meter_name
++
++
++class StatisticsController(rest.RestController):
++
++    @wsme_pecan.wsexpose([ScopedStatistics],
++                         [base.Query], [unicode], [unicode], int, [Aggregate])
++    def get_all(self,
++                q=None, meter=None, groupby=None, period=None, aggregate=None):
++        """Retrieve all statistics for all meters
++
++        :param q: Filter rules for the statistics to be returned.
++        """
++        rbac.enforce('compute_statistics', pecan.request)
++
++        q = q or []
++        meter = meter or []
++        groupby = groupby or []
++        aggregate = aggregate or []
++
++        if period and period < 0:
++            raise base.ClientSideError(_("Period must be positive."))
++
++        g = meters._validate_groupby_fields(groupby)
++
++        # TO DO:  break out the meter names and invoke multiple calls
++        kwargs = v2_utils.query_to_kwargs(q, storage.SampleFilter.__init__)
++
++        aggregate = utils.uniq(aggregate, ['func', 'param'])
++        # Find the original timestamp in the query to use for clamping
++        # the duration returned in the statistics.
++        start = end = None
++        for i in q:
++            if i.field == 'timestamp' and i.op in ('lt', 'le'):
++                end = timeutils.parse_isotime(i.value).replace(
++                    tzinfo=None)
++            elif i.field == 'timestamp' and i.op in ('gt', 'ge'):
++                start = timeutils.parse_isotime(i.value).replace(
++                    tzinfo=None)
++        ret = []
++        for meter_name in meter:
++            kwargs['meter'] = meter_name
++            f = storage.SampleFilter(**kwargs)
++            try:
++                computed = pecan.request.storage_conn.get_meter_statistics(
++                    f, period, g, aggregate)
++                dbStats = [ScopedStatistics(meter_name,
++                                            start_timestamp=start,
++                                            end_timestamp=end,
++                                            **c.as_dict())
++                           for c in computed]
++                ret += dbStats
++                mem_supported = True
++                if mem_supported:
++                    mcomputed = pecan.request.memory_conn.get_meter_statistics(
++                        f, period, g)
++                    memStats = [ScopedStatistics(meter_name,
++                                                 start_timestamp=start,
++                                                 end_timestamp=end,
++                                                 **c.as_dict())
++                                for c in mcomputed]
++                    ret += memStats
++            except OverflowError:
++                LOG.exception("Problem processing %s" % meter_name)
++        return ret
+diff --git a/ceilometer/storage/base.py b/ceilometer/storage/base.py
+index 09bc526..074c5d4 100644
+--- a/ceilometer/storage/base.py
++++ b/ceilometer/storage/base.py
+@@ -206,6 +206,20 @@ class Connection(object):
+         raise ceilometer.NotImplementedError('Meters not implemented')
+ 
+     @staticmethod
++    def get_meter_types(user=None, project=None, resource=None, source=None,
++                        metaquery=None):
++        """Return an iterable of model.Meter instances.
++
++        Iterable items containing meter information.
++        :param user: Optional ID for user that owns the resource.
++        :param project: Optional ID for project that owns the resource.
++        :param resource: Optional resource filter.
++        :param source: Optional source filter.
++        :param metaquery: Optional dict with metadata to match on.
++        """
++        raise ceilometer.NotImplementedError('MeterTypes not implemented')
++
++    @staticmethod
+     def get_samples(sample_filter, limit=None):
+         """Return an iterable of model.Sample instances.
+ 
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index d493ba2..9e48b64 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -17,6 +17,12 @@
+ # of this software may be licensed only pursuant to the terms
+ # of an applicable Wind River license agreement.
+ #
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ """SQLAlchemy storage backend."""
+ 
+@@ -521,7 +527,7 @@ class Connection(base.Connection):
+             )
+ 
+     def get_meters(self, user=None, project=None, resource=None, source=None,
+-                   metaquery=None, limit=None, unique=False):
++                   meter=None, metaquery=None, limit=None, unique=False):
+         """Return an iterable of api_models.Meter instances
+ 
+         :param user: Optional ID for user that owns the resource.
+@@ -536,6 +542,7 @@ class Connection(base.Connection):
+             return
+         s_filter = storage.SampleFilter(user=user,
+                                         project=project,
++                                        meter=meter,
+                                         source=source,
+                                         metaquery=metaquery,
+                                         resource=resource)
+@@ -596,6 +603,34 @@ class Connection(base.Connection):
+                     source=row.source_id,
+                     user_id=row.user_id)
+ 
++    def get_meter_types(self, user=None, project=None, resource=None,
++                        source=None, metaquery=None, limit=None):
++        """Return an iterable of api_models.Meter instances. Params are unused
++
++        :param user: Optional ID for user that owns the resource.
++        :param project: Optional ID for project that owns the resource.
++        :param resource: Optional ID of the resource.
++        :param source: Optional source filter.
++        :param metaquery: Optional dict with metadata to match on.
++        :param limit: Maximum number of results to return.
++        """
++        if limit == 0:
++            return
++        session = self._engine_facade.get_session()
++        query_meters = (session.query(models.Meter.name,
++                                      models.Meter.type,
++                                      models.Meter.unit))
++        query_meters = query_meters.limit(limit) if limit else query_meters
++        for row in query_meters.all():
++            yield api_models.Meter(
++                name=row.name,
++                type=row.type,
++                unit=row.unit,
++                resource_id=None,
++                project_id=None,
++                source=None,
++                user_id=None)
++
+     @staticmethod
+     def _retrieve_samples(query):
+         samples = query.all()
+diff --git a/ceilometer/transformer/conversions.py b/ceilometer/transformer/conversions.py
+index 4614528..2487736 100644
+--- a/ceilometer/transformer/conversions.py
++++ b/ceilometer/transformer/conversions.py
+@@ -129,9 +129,9 @@ class ScalingTransformer(BaseConversionTransformer):
+                                                  **kwargs)
+         self.scale = self.target.get('scale')
+         self.max = self.target.get('max')
+-        LOG.debug('scaling conversion transformer with source:'
+-                  ' %(source)s target: %(target)s:', {'source': self.source,
+-                                                      'target': self.target})
++        # LOG.debug('scaling conversion transformer with source:'
++        #          ' %(source)s target: %(target)s:', {'source': self.source,
++        #                                              'target': self.target})
+ 
+     def _scale(self, s):
+         """Apply the scaling factor.
+@@ -183,7 +183,7 @@ class RateOfChangeTransformer(ScalingTransformer):
+ 
+     def handle_sample(self, s):
+         """Handle a sample, converting if necessary."""
+-        LOG.debug('handling sample %s', s)
++        # LOG.debug('handling sample %s', s)
+         key = s.name + s.resource_id
+         prev = self.cache.get(key)
+         timestamp = timeutils.parse_isotime(s.timestamp)
+@@ -217,10 +217,10 @@ class RateOfChangeTransformer(ScalingTransformer):
+                               if time_delta else 0.0)
+ 
+             s = self._convert(s, rate_of_change)
+-            LOG.debug('converted to: %s', s)
++            # LOG.debug('converted to: %s', s)
+         else:
+-            LOG.warning(_('dropping sample with no predecessor: %s'),
+-                        (s,))
++            # LOG.warning(_('dropping sample with no predecessor: %s'),
++            #            (s,))
+             s = None
+         return s
+ 
+-- 
+2.7.4
+

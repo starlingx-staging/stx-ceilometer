@@ -1,0 +1,66 @@
+From 22067ac6a04e4effd66d693b636a2201119d6099 Mon Sep 17 00:00:00 2001
+From: Mehdi Abaakouk <sileht@redhat.com>
+Date: Thu, 5 Oct 2017 17:34:58 +0200
+Subject: [PATCH 42/91] messaging-publisher: fix threadsafe of flush()
+
+The flush method was concurrency safe in the eventlet word.
+But since use threading, it can race. This change uses a lock
+to play with the queue.
+
+Change-Id: If4443043ab32ddd3aaf97185a58047a4ea4adc7a
+(cherry picked from commit 3e61e6588393abff7361e857a2dfd8eaf768ac22)
+---
+ ceilometer/publisher/messaging.py | 23 ++++++++++++-----------
+ 1 file changed, 12 insertions(+), 11 deletions(-)
+
+diff --git a/ceilometer/publisher/messaging.py b/ceilometer/publisher/messaging.py
+index 329da2a..3ede290 100644
+--- a/ceilometer/publisher/messaging.py
++++ b/ceilometer/publisher/messaging.py
+@@ -18,6 +18,7 @@
+ import abc
+ import itertools
+ import operator
++import threading
+ 
+ from oslo_config import cfg
+ from oslo_log import log
+@@ -84,6 +85,7 @@ class MessagingPublisher(publisher.ConfigPublisherBase):
+             'max_queue_length', [1024])[-1])
+         self.max_retry = 0
+ 
++        self.queue_lock = threading.Lock()
+         self.local_queue = []
+ 
+         if self.policy in ['default', 'queue', 'drop']:
+@@ -125,17 +127,16 @@ class MessagingPublisher(publisher.ConfigPublisherBase):
+         self.flush()
+ 
+     def flush(self):
+-        # NOTE(sileht):
+-        # this is why the self.local_queue is emptied before processing the
+-        # queue and the remaining messages in the queue are added to
+-        # self.local_queue after in case of another call having already added
+-        # something in the self.local_queue
+-        queue = self.local_queue
+-        self.local_queue = []
+-        self.local_queue = (self._process_queue(queue, self.policy) +
+-                            self.local_queue)
+-        if self.policy == 'queue':
+-            self._check_queue_length()
++        with self.queue_lock:
++            queue = self.local_queue
++            self.local_queue = []
++
++        queue = self._process_queue(queue, self.policy)
++
++        with self.queue_lock:
++            self.local_queue = (queue + self.local_queue)
++            if self.policy == 'queue':
++                self._check_queue_length()
+ 
+     def _check_queue_length(self):
+         queue_length = len(self.local_queue)
+-- 
+2.7.4
+

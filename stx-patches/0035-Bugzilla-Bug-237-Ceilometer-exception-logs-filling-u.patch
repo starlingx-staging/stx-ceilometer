@@ -1,0 +1,29 @@
+From 6dada1dfb17d76e53b997745d0df91b77a9ba5ff Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Thu, 21 Dec 2017 14:48:42 -0500
+Subject: [PATCH 35/91] Bugzilla Bug 237 - Ceilometer exception logs filling up
+ openstack.log
+
+Impi extensions are only available for hardware lab not for vbox.
+The exception logs fill up openstack.log on vbox when ceilometer-polling is restarting.
+Changed it to ERROR log since the exception log is not that useful.
+---
+ ceilometer/agent/manager.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/ceilometer/agent/manager.py b/ceilometer/agent/manager.py
+index c27e553..389732c 100644
+--- a/ceilometer/agent/manager.py
++++ b/ceilometer/agent/manager.py
+@@ -311,7 +311,7 @@ class AgentManager(cotyledon.Service):
+             # Extension raising ExtensionLoadError can be ignored,
+             # and ignore anything we can't import as a safety measure.
+             if isinstance(exc, plugin_base.ExtensionLoadError):
+-                LOG.exception("Skip loading extension for %s", ep.name)
++                LOG.error("Skip loading extension for %s", ep.name)
+                 return
+ 
+             show_exception = (LOG.isEnabledFor(logging.DEBUG)
+-- 
+2.7.4
+

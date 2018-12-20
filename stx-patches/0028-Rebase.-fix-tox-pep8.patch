@@ -1,0 +1,26 @@
+From a2b5dc7268c9a02bdc917e915512f2cfbf5a0b06 Mon Sep 17 00:00:00 2001
+From: Al Bailey <Al.Bailey@windriver.com>
+Date: Fri, 3 Nov 2017 10:59:45 -0500
+Subject: [PATCH 28/91] Rebase. fix tox pep8
+
+---
+ ceilometer/notification.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/ceilometer/notification.py b/ceilometer/notification.py
+index e0fa40e..9b9bdca 100644
+--- a/ceilometer/notification.py
++++ b/ceilometer/notification.py
+@@ -26,8 +26,8 @@ from futurist import periodics
+ from oslo_config import cfg
+ from oslo_log import log
+ import oslo_messaging
+-import six
+ import signal
++import six
+ from stevedore import extension
+ from tooz import coordination
+ 
+-- 
+2.7.4
+

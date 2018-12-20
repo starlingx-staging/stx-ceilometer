@@ -1,0 +1,45 @@
+From 418090bf9ec75aa56968a3b341de8b73491601c3 Mon Sep 17 00:00:00 2001
+From: Mehdi Abaakouk <sileht@redhat.com>
+Date: Thu, 12 Oct 2017 16:58:26 +0200
+Subject: [PATCH 62/91] snmp: warn if snmp call timeout
+
+If the snmp call timeout because the host is unreachable
+just warn the operator.
+
+We can't really known what happen with the snmp error.
+That's why the change just filter on "timeout" word.
+
+Change-Id: I564b290c1e07882a7591a003c4da3ac6034ac794
+(cherry picked from commit 988a2f3f2d6141711c63772024974b0da3cb646e)
+---
+ ceilometer/hardware/pollsters/generic.py | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/ceilometer/hardware/pollsters/generic.py b/ceilometer/hardware/pollsters/generic.py
+index ded2188..905a612 100644
+--- a/ceilometer/hardware/pollsters/generic.py
++++ b/ceilometer/hardware/pollsters/generic.py
+@@ -161,11 +161,15 @@ class GenericHardwareDeclarativePollster(plugin_base.PollsterBase):
+                         parsed_url,
+                         i_cache[identifier]))
+             except Exception as err:
+-                LOG.exception('inspector call failed for %(ident)s '
+-                              'host %(host)s: %(err)s',
+-                              dict(ident=identifier,
+-                                   host=parsed_url.hostname,
+-                                   err=err))
++                msg = ('inspector call failed for %(ident)s '
++                       'host %(host)s: %(err)s' %
++                       dict(ident=identifier,
++                            host=parsed_url.hostname,
++                            err=err))
++                if "timeout" in str(err):
++                    LOG.warning(msg)
++                else:
++                    LOG.exception(msg)
+         return itertools.chain(*sample_iters)
+ 
+     def generate_samples(self, host_url, data):
+-- 
+2.7.4
+

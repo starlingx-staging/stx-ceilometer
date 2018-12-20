@@ -1,0 +1,45 @@
+From c7c656cb5108e5e220470a99b93200c4ebb3624a Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Tue, 31 Jan 2017 10:22:36 -0500
+Subject: [PATCH 22/91] US103891: Pike Rebase. Add MANIFEST.in to work with our
+ build system for compile_catalog in spec file.
+
+Without a MANIFEST.in file, most of the non python files are not properly staged
+and therefore we were manually including sql files
+We were also failing to run:  python setup.py compile_catalog  -d blah
+and now that step works.
+---
+ MANIFEST.in | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+ create mode 100644 MANIFEST.in
+
+diff --git a/MANIFEST.in b/MANIFEST.in
+new file mode 100644
+index 0000000..16c0d4e
+--- /dev/null
++++ b/MANIFEST.in
+@@ -0,0 +1,21 @@
++include AUTHORS
++include babel.cfg
++include ChangeLog
++include CONTRIBUTING.rst
++include LICENSE
++include HACKING.rst
++include README.rst
++include openstack-common.conf
++include run_tests.sh
++include setup.cfg
++include setup.py
++include tox.ini
++include etc/*
++include httpd/*
++graft bin
++graft doc
++graft ceilometer/tests
++graft tools
++graft examples
++recursive-include ceilometer *.json *.xml *.cfg *.pem README *.po *.mo *.sql
++global-exclude *.pyc *.sdx *.log *.db *.swp ceilometer/tests/tmp/*
+-- 
+2.7.4
+

@@ -1,0 +1,30 @@
+From 7a843770de6dbb5cbbb02d6841707bed7cf8e402 Mon Sep 17 00:00:00 2001
+From: Pradeep Kilambi <pkilambi@redhat.com>
+Date: Tue, 10 Oct 2017 11:38:26 -0400
+Subject: [PATCH 43/91] Move object storage container_client to match tempest
+
+Depends-On: I74c6d62058e0dcf9284f313c6f45d83c20597fc4
+Change-Id: I9a52558122b6f339b3ecfa7e17e15ffb9b07b209
+(cherry picked from commit 2f64adaa0ce539e4747d6065f6c02ae8bf195e1e)
+---
+ ceilometer/tests/tempest/service/client.py | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/ceilometer/tests/tempest/service/client.py b/ceilometer/tests/tempest/service/client.py
+index 332b450..2733fc4 100644
+--- a/ceilometer/tests/tempest/service/client.py
++++ b/ceilometer/tests/tempest/service/client.py
+@@ -23,8 +23,9 @@ from tempest.lib.services.compute import floating_ips_client as floatingip_cli
+ from tempest.lib.services.compute import networks_client as network_cli
+ from tempest.lib.services.compute import servers_client as server_cli
+ from tempest.lib.services.image.v2 import images_client as img_cli_v2
++from tempest.lib.services.object_storage import \
++    container_client as container_cli
+ from tempest import manager
+-from tempest.services.object_storage import container_client as container_cli
+ from tempest.services.object_storage import object_client as obj_cli
+ 
+ 
+-- 
+2.7.4
+

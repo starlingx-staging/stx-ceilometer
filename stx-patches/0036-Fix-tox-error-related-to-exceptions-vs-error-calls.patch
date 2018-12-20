@@ -1,0 +1,25 @@
+From 7eaf86e5f0bba387817c3fa54ae1a693a29a5476 Mon Sep 17 00:00:00 2001
+From: Al Bailey <Al.Bailey@windriver.com>
+Date: Fri, 22 Dec 2017 10:19:29 -0600
+Subject: [PATCH 36/91] Fix tox error related to exceptions vs error calls
+
+---
+ ceilometer/tests/unit/agent/test_manager.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/ceilometer/tests/unit/agent/test_manager.py b/ceilometer/tests/unit/agent/test_manager.py
+index 7a0fa6a..3c67339 100644
+--- a/ceilometer/tests/unit/agent/test_manager.py
++++ b/ceilometer/tests/unit/agent/test_manager.py
+@@ -114,7 +114,7 @@ class TestManager(base.BaseTestCase):
+                 'airflow', 'cups', 'cpu_util', 'mem_util', 'io_util']
+             calls = [mock.call(err_msg, 'hardware.ipmi.node.%s' % n)
+                      for n in pollster_names]
+-            LOG.exception.assert_has_calls(calls=calls, any_order=True)
++            LOG.error.assert_has_calls(calls=calls, any_order=True)
+ 
+     # Skip loading pollster upon ImportError
+     @mock.patch('ceilometer.ipmi.pollsters.node._Base.__init__',
+-- 
+2.7.4
+

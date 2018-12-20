@@ -1,0 +1,738 @@
+From ff3884d832f9c5dae47786b6a339ee0ee9fab4c7 Mon Sep 17 00:00:00 2001
+From: Tee Ngo <tee.ngo@windriver.com>
+Date: Thu, 12 Jan 2017 16:01:07 -0500
+Subject: [PATCH 17/91] US103891: Pike Rebase. Ceilometer Performance and
+ Scalability Improvements Part 1
+
+This squash includes the following commits:
+
+1. US82778: Ceilometer Performance and Scalability Improvements Part 1
+commit: 0b20a7aeb8a
+
+Make use of new configuration parameters for performance tuning
+- resource_update_interval: decouples Nova resource query from polling interval. Setting this
+  interval to 60 seconds reduces the load to Nova API on the controller by half.
+- shuffle_time_before_polling_task: adds random initial delay to the start of pollsters on
+  each host to prevent large number of requests to Nova and other OpenStack components on
+  the controller at the same time.
+- batch_polled_samples: sends batch of samples to notification agent as opposed to one at at
+  time. The batch method reduces throughput in favor of load reduction to the agent on the
+  controller.
+
+Tests performed:
+- Verify that Ceilometer sanity tests pass on both controller and compute
+- Turn on debug mode and verify that Ceilometer polling process on the compute queries
+  Nova API for instance data every 60 seconds as opposed to every 30 seconds.
+  On compute: >tail -f /var/log/ceilometer/ceilometer-polling.log | grep Querying
+  On controller: >tail -f /var/log/nova/nova-api.log | grep os-server-groups
+- Verify that batch mode is turn on. We may choose to turn batching off depending on large
+  office benchmark results.
+- Verify that there's a random delay in initial start of polling on each compute
+  >sudo kill -9 <ceilometer-polling-pid>
+  >grep initial /var/log/ceilometer/ceilometer-polling.log
+
+2. US82778: Ceilometer Performance and Scalability Improvements Part 1
+commit: f9ed8ed033d
+
+- Improve get meters query for meter-based stats report.
+- Make resource object leaner by eliminating meter links which are not used.
+- Use faster query to retrieve resource info for stats when timestamp is not
+  specifed.
+
+The above improvements reduce meter list query time from 197 seconds to 1 second
+and resource info query time from 160 seconds to 87 seconds. Further improvements
+in this area will be implemented in the next story.
+Note: these measurements are taken from a system with 2+4+20 configuration.
+
+3. US82778: Ceilometer Performance and Scalability Improvements Part 1, db changes
+commit: d1e9eb65de5
+
+Add unique constraint of user_id, project_id, resource_id, source_id and resource_metadata in resource table.
+Add stored procedure to create sample (and resource and meter record if don't exist)
+
+4. fix tox test.
+commit: f2c0c769088
+skip creating conditional unique index on resource table if it is not a postgresql engine (tox test)
+
+5. extract resource metadata into metadata_xxxx tables
+commit: 419c7dc6b83
+
+6. US80977: Mitaka rebase - Port the latest Ceilometer commit in dev0016 so that Mitaka Ceilometer
+is in parity with dev0016 in terms of commits.
+commit: 678291ff9c8
+
+    US82778 - Ceilometer Performance and Scalability Improvements Part 1
+
+    Remove vswitch_nova source and references to udp_sink from Ceilometer pipeline as this UDP
+    service on the controller is no longer available. This change eliminates the processing time
+    to run average filter transformation every 30 seconds for each compute cpu engine.
+
+    Manual test run:
+    - Verify that tox unit tests all pass
+    - In 2+2 system, verify that vswitch engine metering UDP service is not running on the
+      controller: >netstat -lnu|grep 31415
+    - Turn on ceilometer debugging and restart Ceilometer processes on the controller
+    - Verify that AverageFilter log is generated every 30 seconds for each compute resource
+    - Apply the change and restart ceilometer processes
+    - Verify that AverageFilter logs are no longer generated
+    - Apply the change and restart Ceilometer processes on the compute. Note: though pipeline.yaml
+      exists on the compute, it is not referenced by any Ceilometer processes, thus this step is
+      optional
+    - Verify that there are no Ceilometer error log or alarms conditions related to the change
+
+7. CGTS-6889: Removal of Openstack.log ceilometer warning "Unknown discovery extension: tripleo_overcloud_nodes"
+
+   Unknown discovery extension tripleo_overcloud_nodes is due to the TripleO plugin was removed as Tis does not use it.
+   Downgraded the warning log to debug log as it's not that much useful.
+---
+ ceilometer/agent/manager.py                        |   6 +-
+ ceilometer/api/controllers/v2/resources.py         |  11 +-
+ ceilometer/compute/discovery.py                    |   3 +
+ ceilometer/pipeline/data/pipeline.yaml             |  12 -
+ ceilometer/storage/impl_sqlalchemy.py              | 255 ++++++++++++++-------
+ .../045_add_unique_constraint_and_stored_proc.py   | 155 +++++++++++++
+ .../versions/045_reduce_uuid_data_types.py         |  21 --
+ etc/ceilometer/controller.yaml                     |  17 --
+ 8 files changed, 341 insertions(+), 139 deletions(-)
+ create mode 100644 ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py
+ delete mode 100644 ceilometer/storage/sqlalchemy/migrate_repo/versions/045_reduce_uuid_data_types.py
+
+diff --git a/ceilometer/agent/manager.py b/ceilometer/agent/manager.py
+index 4e6db97..c27e553 100644
+--- a/ceilometer/agent/manager.py
++++ b/ceilometer/agent/manager.py
+@@ -206,6 +206,8 @@ class PollingTask(object):
+                             self._send_notification([sample_dict])
+ 
+                     if sample_batch:
++                        LOG.debug('Sending a batch of %d samples',
++                                  len(sample_batch))
+                         self._send_notification(sample_batch)
+ 
+                 except plugin_base.PollsterPermanentError as err:
+@@ -389,6 +391,8 @@ class AgentManager(cotyledon.Service):
+         # set shuffle time before polling task if necessary
+         delay_polling_time = random.randint(
+             0, self.conf.shuffle_time_before_polling_task)
++        LOG.info('Configuring polling tasks with initial polling delay of '
++                 '%d seconds', delay_polling_time)
+ 
+         data = self.setup_polling_tasks()
+ 
+@@ -515,7 +519,7 @@ class AgentManager(cotyledon.Service):
+                 except Exception as err:
+                     LOG.exception('Unable to discover resources: %s', err)
+             else:
+-                LOG.warning('Unknown discovery extension: %s', name)
++                LOG.debug('Unknown discovery extension: %s', name)
+         return resources
+ 
+     def stop_pollsters_tasks(self):
+diff --git a/ceilometer/api/controllers/v2/resources.py b/ceilometer/api/controllers/v2/resources.py
+index e60d7d4..a98cc23 100644
+--- a/ceilometer/api/controllers/v2/resources.py
++++ b/ceilometer/api/controllers/v2/resources.py
+@@ -17,6 +17,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
++#
++# Copyright (c) 2013-2016 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ import datetime
+ from six.moves import urllib
+@@ -100,7 +107,7 @@ class ResourcesController(rest.RestController):
+                                                  type_arg, query_str),
+                          rel=rel_name)
+ 
+-    def _resource_links(self, resource_id, meter_links=1):
++    def _resource_links(self, resource_id, meter_links=0):
+         links = [self._make_link('self', pecan.request.application_url,
+                                  'resources', resource_id)]
+         if meter_links:
+@@ -135,7 +142,7 @@ class ResourcesController(rest.RestController):
+                                           self._resource_links(resource_id))
+ 
+     @wsme_pecan.wsexpose([Resource], [base.Query], int, int)
+-    def get_all(self, q=None, limit=None, meter_links=1):
++    def get_all(self, q=None, limit=None, meter_links=0):
+         """Retrieve definitions of all of the resources.
+ 
+         :param q: Filter rules for the resources to be returned.
+diff --git a/ceilometer/compute/discovery.py b/ceilometer/compute/discovery.py
+index c5395e8..6b25caa 100644
+--- a/ceilometer/compute/discovery.py
++++ b/ceilometer/compute/discovery.py
+@@ -91,6 +91,8 @@ class NovaLikeServer(object):
+     def __eq__(self, other):
+         return self.id == other.id
+ 
++LOG = log.getLogger(__name__)
++
+ 
+ class InstanceDiscovery(plugin_base.DiscoveryBase):
+     method = None
+@@ -242,6 +244,7 @@ class InstanceDiscovery(plugin_base.DiscoveryBase):
+             if (not self.last_run or secs_from_last_update >=
+                     self.expiration_time):
+                 try:
++                    LOG.debug('Querying Nova API for instance data')
+                     if (secs_from_last_expire < self.cache_expiry and
+                             self.last_run):
+                         since = self.last_run.isoformat()
+diff --git a/ceilometer/pipeline/data/pipeline.yaml b/ceilometer/pipeline/data/pipeline.yaml
+index 16db5ad..657c95e 100644
+--- a/ceilometer/pipeline/data/pipeline.yaml
++++ b/ceilometer/pipeline/data/pipeline.yaml
+@@ -32,18 +32,6 @@ sources:
+       sinks:
+           - network_sink
+ sinks:
+-    - name: udp_sink
+-      transformers:
+-          - name: "average_filter"
+-            parameters:
+-              target:
+-                  name: "cpu_util"
+-                  unit: "%"
+-                  type: "gauge"
+-                  scale: "1.0"
+-                  tau: 60.0
+-      publishers:
+-          - udp://controller:31415
+     - name: meter_sink
+       transformers:
+       publishers:
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index 9e48b64..417836c 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -11,13 +11,7 @@
+ # License for the specific language governing permissions and limitations
+ # under the License.
+ #
+-# Copyright (c) 2013-2015 Wind River Systems, Inc.
+-#
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+-# Copyright (c) 2013-2015 Wind River Systems, Inc.
++# Copyright (c) 2013-2016 Wind River Systems, Inc.
+ #
+ # The right to copy, distribute, modify, or otherwise make use
+ # of this software may be licensed only pursuant to the terms
+@@ -31,6 +25,7 @@ import datetime
+ import hashlib
+ import os
+ 
++from collections import namedtuple
+ from oslo_db import api
+ from oslo_db import exception as dbexc
+ from oslo_db.sqlalchemy import session as db_session
+@@ -351,6 +346,26 @@ class Connection(base.Connection):
+ 
+         return internal_id
+ 
++    @staticmethod
++    def _create_resource_meta(conn, res_id, rmeta):
++        if rmeta and isinstance(rmeta, dict):
++            meta_map = {}
++            for key, v in utils.dict_to_keyval(rmeta):
++                try:
++                    _model = sql_utils.META_TYPE_MAP[type(v)]
++                    if meta_map.get(_model) is None:
++                        meta_map[_model] = []
++                    meta_map[_model].append(
++                        {'id': res_id, 'meta_key': key,
++                         'value': v})
++                except KeyError:
++                    LOG.warning(_("Unknown metadata type. Key "
++                                  "(%s) will not be queryable."),
++                                key)
++            for _model in meta_map.keys():
++                conn.execute(_model.__table__.insert(),
++                             meta_map[_model])
++
+     # FIXME(sileht): use set_defaults to pass cfg.CONF.database.retry_interval
+     # and cfg.CONF.database.max_retries to this method when global config
+     # have been removed (puting directly cfg.CONF don't work because and copy
+@@ -364,25 +379,50 @@ class Connection(base.Connection):
+                      ceilometer.publisher.utils.meter_message_from_counter
+         """
+         engine = self._engine_facade.get_engine()
+-        with engine.begin() as conn:
+-            # Record the raw data for the sample.
+-            m_id = self._create_meter(conn,
+-                                      data['counter_name'],
+-                                      data['counter_type'],
+-                                      data['counter_unit'])
+-            res_id = self._create_resource(conn,
+-                                           data['resource_id'],
+-                                           data['user_id'],
+-                                           data['project_id'],
+-                                           data['source'],
+-                                           data['resource_metadata'])
+-            sample = models.Sample.__table__
+-            conn.execute(sample.insert(), meter_id=m_id,
+-                         resource_id=res_id,
+-                         timestamp=data['timestamp'],
+-                         volume=data['counter_volume'],
+-                         message_signature=data['message_signature'],
+-                         message_id=data['message_id'])
++        metadata = jsonutils.dumps(
++            data['resource_metadata'],
++            sort_keys=True
++        )
++
++        m_hash = hashlib.md5(metadata).hexdigest()
++
++        conn = engine.raw_connection()
++        try:
++            cursor = conn.cursor()
++            params = [
++                float(data['counter_volume']),
++                data['counter_name'],
++                data['counter_type'],
++                data['counter_unit'],
++                data['resource_id'],
++                data['user_id'],
++                data['project_id'],
++                data['source'],
++                m_hash,
++                metadata,
++                str(data['timestamp']),
++                data['message_signature'],
++                data['message_id']
++            ]
++            cursor.callproc("create_sample", params)
++            result = cursor.fetchone()
++            # result is tuple of
++            # (sample_id, resource_id, meter_id, is_new_resource, is_new_meter)
++            # limited by sqlalchemy, the column names are not accessible.
++            cursor.close()
++            new_resource_id = result[1]
++            is_new_resource = result[3]
++            conn.commit()
++
++            if is_new_resource and data['resource_metadata']:
++                with engine.begin() as conn2:
++                    self._create_resource_meta(
++                        conn2,
++                        new_resource_id,
++                        data['resource_metadata']
++                    )
++        finally:
++            conn.close()
+ 
+     def clear_expired_metering_data(self, ttl):
+         """Clear expired data from the backend storage system.
+@@ -482,37 +522,50 @@ class Connection(base.Connection):
+                                        require_meter=False)
+         res_q = res_q.limit(limit) if limit else res_q
+         for res_id in res_q.all():
+-
+-            # get max and min sample timestamp value
+-            min_max_q = (session.query(func.max(models.Sample.timestamp)
+-                                       .label('max_timestamp'),
+-                                       func.min(models.Sample.timestamp)
+-                                       .label('min_timestamp'))
+-                                .join(models.Resource,
+-                                      models.Resource.internal_id ==
+-                                      models.Sample.resource_id)
+-                                .filter(models.Resource.resource_id ==
+-                                        res_id[0]))
+-
+-            min_max_q = make_query_from_filter(session, min_max_q, s_filter,
+-                                               require_meter=False)
+-
+-            min_max = min_max_q.first()
+-
+-            # get resource details for latest sample
+-            res_q = (session.query(models.Resource.resource_id,
+-                                   models.Resource.user_id,
+-                                   models.Resource.project_id,
+-                                   models.Resource.source_id,
+-                                   models.Resource.resource_metadata)
+-                            .join(models.Sample,
+-                                  models.Sample.resource_id ==
+-                                  models.Resource.internal_id)
+-                            .filter(models.Sample.timestamp ==
+-                                    min_max.max_timestamp)
+-                            .filter(models.Resource.resource_id ==
+-                                    res_id[0])
+-                            .order_by(models.Sample.id.desc()).limit(1))
++            if has_timestamp:
++                # get max and min sample timestamp value
++                min_max_q = (session.query(func.max(models.Sample.timestamp)
++                                           .label('max_timestamp'),
++                                           func.min(models.Sample.timestamp)
++                                           .label('min_timestamp'))
++                             .join(models.Resource,
++                                   models.Resource.internal_id ==
++                                   models.Sample.resource_id)
++                             .filter(models.Resource.resource_id ==
++                                     res_id[0]))
++
++                min_max_q = make_query_from_filter(session, min_max_q,
++                                                   s_filter,
++                                                   require_meter=False)
++                min_max = min_max_q.first()
++
++                # get resource details for latest sample
++                res_q = (session.query(models.Resource.resource_id,
++                                       models.Resource.user_id,
++                                       models.Resource.project_id,
++                                       models.Resource.source_id,
++                                       models.Resource.resource_metadata)
++                         .join(models.Sample,
++                               models.Sample.resource_id ==
++                               models.Resource.internal_id)
++                         .filter(models.Sample.timestamp ==
++                                 min_max.max_timestamp)
++                         .filter(models.Resource.resource_id ==
++                                 res_id[0])
++                         .order_by(models.Sample.id.desc()).limit(1))
++            else:
++                # US82778: If the client does not specify the timestamps, use
++                # a much leaner query to retrieve resource info
++                min_max_ts = namedtuple('min_max_ts', ['min_timestamp',
++                                                       'max_timestamp'])
++                min_max = min_max_ts(None, None)
++                res_q = (session.query(models.Resource.resource_id,
++                                       models.Resource.user_id,
++                                       models.Resource.project_id,
++                                       models.Resource.source_id,
++                                       models.Resource.resource_metadata)
++                         .filter(models.Resource.resource_id == res_id[0])
++                         .limit(1))
+ 
+             res = res_q.first()
+ 
+@@ -547,38 +600,68 @@ class Connection(base.Connection):
+                                         metaquery=metaquery,
+                                         resource=resource)
+ 
+-        # NOTE(gordc): get latest sample of each meter/resource. we do not
+-        #              filter here as we want to filter only on latest record.
+         session = self._engine_facade.get_session()
+ 
+-        subq = session.query(func.max(models.Sample.id).label('id')).join(
+-            models.Resource,
+-            models.Resource.internal_id == models.Sample.resource_id)
+-
+-        if unique:
+-            subq = subq.group_by(models.Sample.meter_id)
++        if s_filter.meter:
++            # US82778: If a specific meter is provided which is the case for
++            # meter based stats report, use a faster query
++            LOG.info('Executing faster query. Provided meter name = %s',
++                     s_filter.meter)
++            subq = session.query(models.Sample.meter_id.label('m_id'),
++                                 models.Sample.resource_id.label('res_id'),
++                                 models.Meter.name.label('m_name'),
++                                 models.Meter.type.label('m_type'),
++                                 models.Meter.unit.label('m_unit')).join(
++                models.Meter, models.Meter.id == models.Sample.meter_id)
++            subq = subq.filter(models.Meter.name == meter)
++            subq = subq.subquery()
++            query_sample = (session.query(
++                func.max(subq.c.m_id).label('id'),
++                func.max(subq.c.m_name).label('name'),
++                func.max(subq.c.m_type).label('type'),
++                func.max(subq.c.m_unit).label('unit'),
++                models.Resource.resource_id.label('resource_id'),
++                func.max(models.Resource.project_id).label('project_id'),
++                func.max(models.Resource.source_id).label('source_id'),
++                func.max(models.Resource.user_id).label('user_id'))
++                .join(models.Resource, models.Resource.internal_id ==
++                      subq.c.res_id)) \
++                .group_by(models.Resource.resource_id)
+         else:
+-            subq = subq.group_by(models.Sample.meter_id,
+-                                 models.Resource.resource_id)
+-
+-        if resource:
+-            subq = subq.filter(models.Resource.resource_id == resource)
+-        subq = subq.subquery()
+-
+-        # get meter details for samples.
+-        query_sample = (session.query(models.Sample.meter_id,
+-                                      models.Meter.name, models.Meter.type,
+-                                      models.Meter.unit,
+-                                      models.Resource.resource_id,
+-                                      models.Resource.project_id,
+-                                      models.Resource.source_id,
+-                                      models.Resource.user_id).join(
+-            subq, subq.c.id == models.Sample.id)
+-            .join(models.Meter, models.Meter.id == models.Sample.meter_id)
+-            .join(models.Resource,
+-                  models.Resource.internal_id == models.Sample.resource_id))
+-        query_sample = make_query_from_filter(session, query_sample, s_filter,
+-                                              require_meter=False)
++            # NOTE(gordc): get latest sample of each meter/resource. we do not
++            #          filter here as we want to filter only on latest record.
++
++            subq = session.query(func.max(models.Sample.id).label('id')).join(
++                models.Resource,
++                models.Resource.internal_id == models.Sample.resource_id)
++
++            if unique:
++                subq = subq.group_by(models.Sample.meter_id)
++            else:
++                subq = subq.group_by(models.Sample.meter_id,
++                                     models.Resource.resource_id)
++
++            if resource:
++                subq = subq.filter(models.Resource.resource_id == resource)
++            subq = subq.subquery()
++
++            # get meter details for samples.
++            query_sample = (session.query(models.Sample.meter_id,
++                                          models.Meter.name, models.Meter.type,
++                                          models.Meter.unit,
++                                          models.Resource.resource_id,
++                                          models.Resource.project_id,
++                                          models.Resource.source_id,
++                                          models.Resource.user_id)
++                            .join(subq, subq.c.id == models.Sample.id)
++                            .join(models.Meter, models.Meter.id ==
++                                  models.Sample.meter_id)
++                            .join(models.Resource,
++                                  models.Resource.internal_id ==
++                                  models.Sample.resource_id))
++            query_sample = make_query_from_filter(session, query_sample,
++                                                  s_filter,
++                                                  require_meter=False)
+ 
+         query_sample = query_sample.limit(limit) if limit else query_sample
+ 
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py
+new file mode 100644
+index 0000000..ab2a043
+--- /dev/null
++++ b/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py
+@@ -0,0 +1,155 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++#
++# Copyright (c) 2016 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++
++from migrate.changeset.constraint import UniqueConstraint
++import sqlalchemy as sa
++from sqlalchemy import text
++
++
++# Add unique constraint for user_id, project_id, resource_id, source_id and
++# resource_metadata
++# Add stored procedure to perform sample insertion with resource and meter
++# existence check and creation of meter and/or resource
++def upgrade(migrate_engine):
++    # when upgrade, the sample meter and resource tables are not transformed
++    #  to new system, so it is safe to create unique constraint
++    meta = sa.MetaData(bind=migrate_engine)
++    resource = sa.Table("resource", meta, autoload=True)
++    uni_constraint = UniqueConstraint(
++        "user_id", "project_id", "resource_id", "source_id",
++        "resource_metadata", name="uix_resource_uni", table=resource
++    )
++    uni_constraint.create()
++
++    index = sa.Index("idx_resource_user_id", resource.c.user_id)
++    index.create(bind=migrate_engine)
++    index = sa.Index("idx_resource_project_id", resource.c.project_id)
++    index.create(bind=migrate_engine)
++
++    # in some tox environment, sqlite3 failed the unique index with
++    # where clause
++    if migrate_engine.name == 'postgresql':
++        t = text(
++            "CREATE UNIQUE INDEX uix_project_user_id_null_idx ON resource "
++            "(resource_id, source_id, resource_metadata) WHERE project_id "
++            "IS NULL and user_id is NULL;"
++        )
++        migrate_engine.execute(t)
++
++        t = text(
++            "CREATE UNIQUE INDEX uix_user_id_null_idx ON resource "
++            "(project_id, resource_id, source_id, resource_metadata) "
++            "WHERE user_id IS NULL;"
++        )
++        migrate_engine.execute(t)
++
++        t = text(
++            "CREATE UNIQUE INDEX uix_project_id_null_idx ON resource "
++            "(user_id, resource_id, source_id, resource_metadata) "
++            "WHERE project_id IS NULL;"
++        )
++        migrate_engine.execute(t)
++
++    if migrate_engine.name == 'postgresql':
++        t = text(
++            "CREATE INDEX idx_resource_metadata "
++            "ON resource (resource_metadata text_pattern_ops);"
++        )
++    else:
++        t = text(
++            "CREATE INDEX idx_resource_metadata "
++            "ON resource (resource_metadata);"
++        )
++    migrate_engine.execute(t)
++
++    # only support postgresql until further requirement
++    if migrate_engine.name != 'postgresql':
++        return
++
++    t = text(
++        "create or replace function create_sample"
++        "(counter_volume float, counter_name varchar(255), "
++        "counter_type varchar(255), counter_unit varchar(255),"
++        "r_id varchar(255), u_id varchar(255), p_id varchar(255), "
++        "s_id varchar(255), m_hash varchar(32), r_meta text, ts varchar(255),"
++        " msg_signature varchar(1000), msg_id varchar(1000)) "
++        "RETURNS table(new_sample_id bigint, resource_id integer, "
++        "meter_id integer, new_resource boolean, "
++        "new_meter boolean) as\n"
++        "$$\n"
++        "DECLARE\n"
++        "   res_id integer;\n"
++        "   met_id integer;\n"
++        "   new_resource boolean = false;\n"
++        "   new_meter boolean = false;\n"
++        "BEGIN\n"
++        "   select internal_id into res_id from resource"
++        " where ((user_id is Null and u_id is Null) or"
++        " (user_id = u_id)) and\n"
++        "       ((project_id is Null and p_id is Null) or"
++        " (project_id = p_id)) and\n"
++        "       resource.resource_id = r_id and\n"
++        "       resource.source_id = s_id and\n"
++        "       resource.metadata_hash = m_hash;\n\n"
++        "   IF res_id is NULL THEN\n"
++        "   BEGIN\n"
++        "       insert into resource (resource_id, user_id, project_id, "
++        "source_id, resource_metadata, metadata_hash)\n"
++        "       values(r_id, u_id, p_id, s_id, r_meta, m_hash);\n"
++        "       select lastval() into res_id;\n"
++        "       select true into new_resource;\n"
++        "       EXCEPTION WHEN unique_violation THEN\n"
++        "           select internal_id into res_id from resource \n"
++        "           where resource.resource_id = r_id and\n"
++        "               resource.user_id = u_id and\n"
++        "               resource.project_id = p_id and\n"
++        "               resource.metadata_hash = m_hash;\n"
++        "       END;\n"
++        "   END IF;\n\n"
++        "   select meter.id into met_id from meter\n"
++        "       where meter.name = counter_name and \n"
++        "       meter.type = counter_type and\n"
++        "       meter.unit = counter_unit;\n"
++        "   if met_id is NULL THEN\n"
++        "   BEGIN\n"
++        "       insert into meter (name, type, unit) \n"
++        "       values(counter_name, counter_type, counter_unit);\n"
++        "       select lastval() into met_id;\n"
++        "       select true into new_meter;\n"
++        "       EXCEPTION WHEN unique_violation THEN\n"
++        "           select meter.id into met_id from meter "
++        "where meter.name = counter_name and "
++        "meter.type = counter_type and meter.unit = counter_unit;\n"
++        "       END;\n"
++        "   end if;\n\n"
++        "   insert into sample (volume, timestamp, message_signature, "
++        "message_id, recorded_at, meter_id, resource_id)\n"
++        "	values(counter_volume, "
++        "to_timestamp(ts, 'YYYY-MM-DD HH24:MI:SS'), msg_signature, "
++        "msg_id, to_timestamp(ts, 'YYYY-MM-DDTHH:MI:SS'), met_id, res_id);\n"
++        "   return query select lastval() as new_sample_id, \n"
++        "                       res_id as resource_id, \n"
++        "                       met_id as meter_id, \n"
++        "                       new_resource as new_resource, \n"
++        "                       new_meter as new_meter;\n"
++        "END;\n"
++        "$$\n"
++        "LANGUAGE plpgsql;"
++    )
++
++    migrate_engine.execute(t)
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_reduce_uuid_data_types.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_reduce_uuid_data_types.py
+deleted file mode 100644
+index 0244416..0000000
+--- a/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_reduce_uuid_data_types.py
++++ /dev/null
+@@ -1,21 +0,0 @@
+-# Licensed under the Apache License, Version 2.0 (the "License"); you may
+-# not use this file except in compliance with the License. You may obtain
+-# a copy of the License at
+-#
+-#      http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing, software
+-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+-# License for the specific language governing permissions and limitations
+-# under the License.
+-
+-# Perviously was 043_reduce_uuid_data_types
+-# Swapped due to conflict issue during ceilometer db upgrade
+-
+-def upgrade(migrate_engine):
+-    # NOTE(gordc): this is a noop script to handle bug1468916
+-    # previous lowering of id length will fail if db contains data longer.
+-    # this skips migration for those failing. the next script will resize
+-    # if this original migration passed.
+-    pass
+diff --git a/etc/ceilometer/controller.yaml b/etc/ceilometer/controller.yaml
+index 1c9351c..2050817 100644
+--- a/etc/ceilometer/controller.yaml
++++ b/etc/ceilometer/controller.yaml
+@@ -1,9 +1,4 @@
+ sources:
+-    - name: vswitch_nova
+-      meters:
+-          - "vswitch.engine.util"
+-      sinks:
+-          - udp_sink
+     - name: meter_source
+       meters:
+           - "*"
+@@ -40,18 +35,6 @@ sources:
+           - network_sink
+           - csv_sink
+ sinks:
+-    - name: udp_sink
+-      transformers:
+-          - name: "average_filter"
+-            parameters:
+-              target:
+-                  name: "cpu_util"
+-                  unit: "%"
+-                  type: "gauge"
+-                  scale: "1.0"
+-                  tau: 60.0
+-      publishers:
+-          - udp://controller:31415
+     - name: meter_sink
+       transformers:
+       publishers:
+-- 
+2.7.4
+

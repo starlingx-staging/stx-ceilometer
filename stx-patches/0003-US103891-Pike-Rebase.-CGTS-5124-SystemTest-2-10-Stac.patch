@@ -1,0 +1,57 @@
+From dfbcb9e247d39b62aa2b665d52512693c55ee05a Mon Sep 17 00:00:00 2001
+From: Tee Ngo <tee.ngo@windriver.com>
+Date: Wed, 11 Jan 2017 15:26:55 -0500
+Subject: [PATCH 03/91] US103891: Pike Rebase. CGTS-5124: SystemTest 2+10:
+ Stack creation failed
+
+One of the root causes is Ceilometer Collector's stop sequence did not run to completion
+due to an exception which resulted in child processes not being terminated and thus
+their database connections were not released.
+
+Tests performed:
+- Swact a few times
+- Restart service (sm-restart service ceilometer-collector)
+- Manually terminate parent process (kill -15)
+After each of the above, verify that both parent and child processes are terminated and
+their database connections are released.
+---
+ ceilometer/collector.py | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/ceilometer/collector.py b/ceilometer/collector.py
+index a03722b..b7733be 100644
+--- a/ceilometer/collector.py
++++ b/ceilometer/collector.py
+@@ -12,6 +12,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
++#
++# Copyright (c) 2013-2016 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ from itertools import chain
+ import select
+@@ -150,9 +157,13 @@ class CollectorService(cotyledon.Service):
+                                 'discarding: %s', sample)
+ 
+     def terminate(self):
+-        if self.sample_listener:
++        # CGTS-5124: Parent process does not have sample_listener and
++        # event-listener. Ensure the stop sequence is run to completion
++        # otherwise the child processes won't get terminated and release
++        # there database connections.
++        if getattr(self, 'sample_listener', None):
+             utils.kill_listeners([self.sample_listener])
+-        if self.event_listener:
++        if getattr(self, 'event_listener', None):
+             utils.kill_listeners([self.event_listener])
+         if self.udp_thread:
+             self.udp_run = False
+-- 
+2.7.4
+

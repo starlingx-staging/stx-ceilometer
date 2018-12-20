@@ -1,0 +1,70 @@
+From 571c1296b2fb3fa482b3ed17e7a9aaf172f20b50 Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Fri, 9 Jun 2017 11:13:40 -0400
+Subject: [PATCH 25/91] US103891: Pike Rebase. CGTS-7267: LO: Postgres
+ filesystem alarm due to ceilometer expirer failure
+
+The original logic for clear the expired samples is that remove expired samples, remove meter definations
+with no matching samples, then udpate resource table to mark resources for delete with no matching samples,
+then remove the marked resources in metadata tables and resource table.
+
+However, in our postgresql, the update operation which marks resource for delete in the big lab takes more
+than 1 minute, sometimes more than 5 minutes. In this update period, new samples are referenced to marked
+resrouces may come in which causes the error. The full text search takes in milliseconds, it's much less expensive.
+Changed to use the same query instead of updating resource table.
+---
+ ceilometer/storage/impl_sqlalchemy.py | 20 ++++----------------
+ 1 file changed, 4 insertions(+), 16 deletions(-)
+
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index fac59c3..6a07f37 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -38,7 +38,6 @@ from sqlalchemy import and_
+ from sqlalchemy import distinct
+ from sqlalchemy import func
+ from sqlalchemy.orm import aliased
+-from sqlalchemy.sql.expression import cast
+ from sqlalchemy.sql import text
+ 
+ import ceilometer
+@@ -632,32 +631,21 @@ class Connection(base.Connection):
+                  .filter(~models.Meter.samples.any())
+                  .delete(synchronize_session=False))
+ 
+-            with session.begin():
+-                resource_q = (session.query(models.Resource.internal_id)
+-                              .filter(~models.Resource.samples.any()))
+-                # mark resource with no matching samples for delete
+-                resource_q.update({models.Resource.metadata_hash: "delete_"
+-                                  + cast(models.Resource.internal_id,
+-                                         sa.String)},
+-                                  synchronize_session=False)
+-
+-            # remove metadata of resources marked for delete
++            # remove metadata of resources with no matching samples
+             for table in [models.MetaText, models.MetaBigInt,
+                           models.MetaFloat, models.MetaBool]:
+                 with session.begin():
+                     resource_q = (session.query(models.Resource.internal_id)
+-                                  .filter(models.Resource.metadata_hash
+-                                          .like('delete_%')))
++                                  .filter(~models.Resource.samples.any()))
+                     resource_subq = resource_q.subquery()
+                     (session.query(table)
+                      .filter(table.id.in_(resource_subq))
+                      .delete(synchronize_session=False))
+ 
+-            # remove resource marked for delete
++            # remove resource with no matching samples
+             with session.begin():
+                 resource_q = (session.query(models.Resource.internal_id)
+-                              .filter(models.Resource.metadata_hash
+-                                      .like('delete_%')))
++                              .filter(~models.Resource.samples.any()))
+                 resource_q.delete(synchronize_session=False)
+             LOG.info("Expired residual resource and"
+                      " meter definition data")
+-- 
+2.7.4
+

@@ -1,0 +1,39 @@
+From f6435f020b97b4c9afc2bb6fe5a5642e96ee9507 Mon Sep 17 00:00:00 2001
+From: gord chung <gord@live.ca>
+Date: Mon, 11 Dec 2017 14:42:45 +0000
+Subject: [PATCH 64/91] static resources not picked up
+
+polling is still broken if backend_url is not set. switch to
+tooz hashrings caused it to be ignored.
+
+Change-Id: Iace637dd5ed8a852db79b23e99918ca3e5c6605e
+Closes-Bug: #1732147
+(cherry picked from commit 46c84ef7f7db3500e8864501bb517aca436003cb)
+---
+ ceilometer/agent/manager.py | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/ceilometer/agent/manager.py b/ceilometer/agent/manager.py
+index 99c7bbc..25cacc0 100644
+--- a/ceilometer/agent/manager.py
++++ b/ceilometer/agent/manager.py
+@@ -107,11 +107,11 @@ class Resources(object):
+         if self._resources:
+             static_resources_group = self.agent_manager.construct_group_id(
+                 utils.hash_of_set(self._resources))
+-            if self.agent_manager.partition_coordinator:
+-                return [v for v in self._resources if
+-                        self.agent_manager.hashrings[
+-                            static_resources_group].belongs_to_self(
+-                                six.text_type(v))] + source_discovery
++            return [v for v in self._resources if
++                    not self.agent_manager.partition_coordinator or
++                    self.agent_manager.hashrings[
++                        static_resources_group].belongs_to_self(
++                            six.text_type(v))] + source_discovery
+ 
+         return source_discovery
+ 
+-- 
+2.7.4
+

@@ -1,0 +1,576 @@
+From 2e808fe8aec24ebdfbd9a7262a038968a1417801 Mon Sep 17 00:00:00 2001
+From: Nakul Dahiwade <nakul.dahiwade@gmail.com>
+Date: Tue, 3 Apr 2018 17:12:46 -0700
+Subject: [PATCH 85/91] avs_related_removal
+
+---
+ ceilometer/compute/virt/libvirt/inspector.py       |   4 -
+ ceilometer/tests/unit/vswitch/__init__.py          |   0
+ .../tests/unit/vswitch/test_notifications.py       | 163 ----------
+ ceilometer/vswitch/__init__.py                     |   0
+ ceilometer/vswitch/notifications.py                | 345 ---------------------
+ setup.cfg                                          |   3 -
+ 6 files changed, 515 deletions(-)
+ delete mode 100644 ceilometer/tests/unit/vswitch/__init__.py
+ delete mode 100644 ceilometer/tests/unit/vswitch/test_notifications.py
+ delete mode 100644 ceilometer/vswitch/__init__.py
+ delete mode 100644 ceilometer/vswitch/notifications.py
+
+diff --git a/ceilometer/compute/virt/libvirt/inspector.py b/ceilometer/compute/virt/libvirt/inspector.py
+index 56b1853..0b21b6c 100755
+--- a/ceilometer/compute/virt/libvirt/inspector.py
++++ b/ceilometer/compute/virt/libvirt/inspector.py
+@@ -88,10 +88,6 @@ class LibvirtInspector(virt_inspector.Inspector):
+ 
+         tree = etree.fromstring(domain.XMLDesc(0))
+         for iface in tree.findall('devices/interface'):
+-            # vswitch interfaces are gathered via the vswitch agent
+-            iftype = iface.get('type')
+-            if iftype == 'vswitch':
+-                continue
+             target = iface.find('target')
+             if target is not None:
+                 name = target.get('dev')
+diff --git a/ceilometer/tests/unit/vswitch/__init__.py b/ceilometer/tests/unit/vswitch/__init__.py
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/ceilometer/tests/unit/vswitch/test_notifications.py b/ceilometer/tests/unit/vswitch/test_notifications.py
+deleted file mode 100644
+index e3e3873..0000000
+--- a/ceilometer/tests/unit/vswitch/test_notifications.py
++++ /dev/null
+@@ -1,163 +0,0 @@
+-#
+-# Copyright 2012 Red Hat, Inc
+-#
+-# Licensed under the Apache License, Version 2.0 (the "License"); you may
+-# not use this file except in compliance with the License. You may obtain
+-# a copy of the License at
+-#
+-#      http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing, software
+-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+-# License for the specific language governing permissions and limitations
+-# under the License.
+-"""Implementation of Inspector abstraction for libvirt."""
+-#
+-# Copyright (c) 2015 Wind River Systems, Inc.
+-#
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+-"""Tests for converters for producing switch counter messages from
+-notification events.
+-"""
+-
+-from ceilometer.vswitch import notifications
+-import copy
+-from oslotest import base
+-
+-RES_ID = u'16207266-ee15-48d7-88ad-ce9ed36f2bc8'
+-
+-VSWITCH_ENGINE_UPDATE = {
+-    u'_context_request_id': u'req-a8bfa89b-d28b-4b95-9e4b-7d7875275650',
+-    u'_context_quota_class': None,
+-    u'event_type': u'vswitch.meter.engine',
+-    u'_context_service_catalog': [],
+-    u'_context_auth_token': None,
+-    u'_context_user_id': None,
+-    u'payload': {u'engine-metrics': [{
+-        u'uuid': RES_ID,
+-        u'cpu_util': u'50'}]
+-    },
+-    u'priority': u'INFO',
+-    u'publisher_id': u'compute.vswitch.wrs.com',
+-    'metadata': {
+-        'timestamp': u'2017-11-15 20:02:44.169173',
+-        'message_id': u'b97fc96f-da2d-4211-9699-8d85995ee0c8'}
+-}
+-
+-
+-class TestVSwitchEngineNotification(base.BaseTestCase):
+-
+-    def test_engine(self):
+-        engine = notifications.Engine(None)
+-        self.assertIn(VSWITCH_ENGINE_UPDATE['event_type'], engine.event_types)
+-        samples = list(engine.process_notification(VSWITCH_ENGINE_UPDATE))
+-        self.assertEqual(1, len(samples))
+-        self.assertEqual(RES_ID, samples[0].resource_id)
+-        self.assertEqual('vswitch.engine.util', samples[0].name)
+-        self.assertEqual(50, samples[0].volume)
+-        self.assertEqual('%', samples[0].unit)
+-
+-    def test_engine_error(self):
+-        ERROR_UPDATE = copy.copy(VSWITCH_ENGINE_UPDATE)
+-        ERROR_UPDATE['payload'] = {u'engine-metrics': [{}]}
+-        engine = notifications.Engine(None)
+-        self.assertIn(VSWITCH_ENGINE_UPDATE['event_type'], engine.event_types)
+-        samples = list(engine.process_notification(ERROR_UPDATE))
+-        self.assertEqual(0, len(samples))
+-
+-VSWITCH_PORT_UPDATE = copy.copy(VSWITCH_ENGINE_UPDATE)
+-VSWITCH_PORT_UPDATE[u'event_type'] = u'vswitch.meter.port'
+-VSWITCH_PORT_UPDATE[u'payload'] = {u'port-metrics': [{
+-    u'uuid': RES_ID,
+-    u'tenant_id': u'004f2be7-3fa4-4162-bb24-b1fdaf130183',
+-    u'network_id': u'cb0caf9f-02e8-40cd-9333-ca1ef7c91c89',
+-    u'link-speed': u'1000',
+-    u'host': u'test-host',
+-    u'rx-bytes': u'100',
+-    u'tx-bytes': u'110',
+-    u'rx-packets': u'10',
+-    u'tx-packets': u'11',
+-    u'rx-util': u'50',
+-    u'tx-util': u'51',
+-    u'rx-errors': u'20',
+-    u'tx-errors': u'21'}]
+-}
+-
+-
+-class TestVSwitchPortNotification(base.BaseTestCase):
+-
+-    def test_port_error(self):
+-        ERROR_UPDATE = copy.copy(VSWITCH_PORT_UPDATE)
+-        ERROR_UPDATE['payload'] = {u'port-metrics': [{}]}
+-        port = notifications.Port(None)
+-        self.assertIn(VSWITCH_PORT_UPDATE['event_type'], port.event_types)
+-        samples = list(port.process_notification(ERROR_UPDATE))
+-        self.assertEqual(0, len(samples))
+-
+-    def test_port_metadata_error(self):
+-        ERROR_UPDATE = copy.copy(VSWITCH_PORT_UPDATE)
+-        for attr in ['tenant_id', 'uuid', 'network_id',
+-                     'link-speed', 'host']:
+-            ERROR_UPDATE = copy.copy(VSWITCH_PORT_UPDATE)
+-            del ERROR_UPDATE['payload']['port-metrics'][0][attr]
+-            port = notifications.Port(None)
+-            self.assertIn(VSWITCH_PORT_UPDATE['event_type'], port.event_types)
+-            samples = list(port.process_notification(ERROR_UPDATE))
+-            self.assertEqual(0, len(samples))
+-
+-    def test_port(self):
+-        port = notifications.Port(None)
+-        self.assertIn(VSWITCH_PORT_UPDATE['event_type'], port.event_types)
+-        samples = list(port.process_notification(VSWITCH_PORT_UPDATE))
+-
+-        rxb_samples = [s for s in samples
+-                       if s.name == 'vswitch.port.receive.bytes']
+-        self.assertEqual(1, len(rxb_samples))
+-        self.assertEqual(100, rxb_samples[0].volume)
+-        self.assertEqual('B', rxb_samples[0].unit)
+-
+-        txb_samples = [s for s in samples
+-                       if s.name == 'vswitch.port.transmit.bytes']
+-        self.assertEqual(1, len(txb_samples))
+-        self.assertEqual(110, txb_samples[0].volume)
+-        self.assertEqual('B', txb_samples[0].unit)
+-
+-        rxp_samples = [s for s in samples
+-                       if s.name == 'vswitch.port.receive.packets']
+-        self.assertEqual(1, len(rxp_samples))
+-        self.assertEqual(10, rxp_samples[0].volume)
+-        self.assertEqual('packet', rxp_samples[0].unit)
+-
+-        txp_samples = [s for s in samples
+-                       if s.name == 'vswitch.port.transmit.packets']
+-        self.assertEqual(1, len(txp_samples))
+-        self.assertEqual(11, txp_samples[0].volume)
+-        self.assertEqual('packet', txp_samples[0].unit)
+-
+-        rxu_samples = [s for s in samples
+-                       if s.name == 'vswitch.port.receive.util']
+-        self.assertEqual(1, len(rxu_samples))
+-        self.assertEqual(50, rxu_samples[0].volume)
+-        self.assertEqual('%', rxu_samples[0].unit)
+-
+-        txu_samples = [s for s in samples
+-                       if s.name == 'vswitch.port.transmit.util']
+-        self.assertEqual(1, len(txu_samples))
+-        self.assertEqual(51, txu_samples[0].volume)
+-        self.assertEqual('%', txu_samples[0].unit)
+-
+-        rxp_samples = [s for s in samples
+-                       if s.name == 'vswitch.port.receive.errors']
+-        self.assertEqual(1, len(rxp_samples))
+-        self.assertEqual(20, rxp_samples[0].volume)
+-        self.assertEqual('packet', rxp_samples[0].unit)
+-
+-        txp_samples = [s for s in samples
+-                       if s.name == 'vswitch.port.transmit.errors']
+-        self.assertEqual(1, len(txp_samples))
+-        self.assertEqual(21, txp_samples[0].volume)
+-        self.assertEqual('packet', txp_samples[0].unit)
+diff --git a/ceilometer/vswitch/__init__.py b/ceilometer/vswitch/__init__.py
+deleted file mode 100644
+index e69de29..0000000
+diff --git a/ceilometer/vswitch/notifications.py b/ceilometer/vswitch/notifications.py
+deleted file mode 100644
+index 76cd1be..0000000
+--- a/ceilometer/vswitch/notifications.py
++++ /dev/null
+@@ -1,345 +0,0 @@
+-# -*- encoding: utf-8 -*-
+-#
+-# Licensed under the Apache License, Version 2.0 (the "License"); you may
+-# not use this file except in compliance with the License. You may obtain
+-# a copy of the License at
+-#
+-#      http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing, software
+-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+-# License for the specific language governing permissions and limitations
+-# under the License.
+-#
+-# Copyright (c) 2013-2015 Wind River Systems, Inc.
+-#
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+-
+-"""
+-Handler for producing switch counter messages from vswitch
+-notification events.
+-
+-"""
+-
+-from oslo_config import cfg
+-from oslo_log import log
+-import oslo_messaging
+-
+-from ceilometer.agent import plugin_base
+-from ceilometer.i18n import _
+-from ceilometer import sample
+-
+-OPTS = [
+-    cfg.StrOpt('vswitch_control_exchange',
+-               default='vswitch',
+-               help="Exchange name for WRS vSwitch notifications")
+-]
+-
+-LOG = log.getLogger(__name__)
+-
+-
+-class VSwitchNotificationBase(plugin_base.NotificationBase):
+-
+-    def get_targets(self, conf):
+-        # Return a sequence of oslo.messaging.Target
+-        # Sequence defining the exchange and topics to be connected for this
+-        # plugin.
+-
+-        return [oslo_messaging.Target(topic=topic,
+-                                      exchange=conf.vswitch_control_exchange)
+-                for topic in self.get_notification_topics(conf)]
+-
+-
+-class Engine(VSwitchNotificationBase):
+-    """Convert vswitch engine metering notifications into samples.
+-
+-    """
+-    event_types = ['vswitch.meter.engine']
+-
+-    def process_notification(self, message):
+-        LOG.debug('vswitch engine notification %r', message)
+-
+-        engine_metrics = message['payload']['engine-metrics']
+-
+-        for metrics in engine_metrics:
+-            try:
+-                info = {
+-                    'project_id': None,
+-                    'resource_id': metrics['uuid'],
+-                    'timestamp': message['metadata']['timestamp'],
+-                    'resource_metadata': {
+-                        'cpu_id': metrics.get('cpu_id', None),
+-                        'host': metrics.get('host', None)
+-                    },
+-                    'user_id': None
+-                }
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building '
+-                              'sample info: %(e)s') % {'e': err})
+-                return
+-
+-            name = 'vswitch.engine.util'
+-            try:
+-                yield sample.Sample(
+-                    name=name,
+-                    type=sample.TYPE_GAUGE,
+-                    unit='%',
+-                    volume=float(metrics['cpu_util']),
+-                    **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.engine.receive.discard'
+-            try:
+-                if long(metrics['rx_discard']) > 0:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_CUMULATIVE,
+-                        unit='packet',
+-                        volume=long(metrics['rx_discard']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.engine.transmit.discard'
+-            try:
+-                if long(metrics['tx_discard']) > 0:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_CUMULATIVE,
+-                        unit='packet',
+-                        volume=long(metrics['tx_discard']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-
+-class Port(VSwitchNotificationBase):
+-    """Convert vswitch port metering notifications into samples.
+-
+-    """
+-    event_types = ['vswitch.meter.port']
+-
+-    def process_notification(self, message):
+-        LOG.debug('vswitch port notification %r', message)
+-
+-        port_metrics = message['payload']['port-metrics']
+-
+-        for metrics in port_metrics:
+-            try:
+-                info = {
+-                    'project_id': metrics['tenant_id'],
+-                    'resource_id': metrics['uuid'],
+-                    'timestamp': message['metadata']['timestamp'],
+-                    'resource_metadata': {
+-                        'network_id': metrics['network_id'],
+-                        'link-speed': metrics['link-speed'],
+-                        'host': metrics['host']
+-                    },
+-                    'user_id': None
+-                }
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building '
+-                              'sample info: %(e)s') % {'e': err})
+-                return
+-
+-            name = 'vswitch.port.receive.bytes'
+-            try:
+-                yield sample.Sample(
+-                    name=name,
+-                    type=sample.TYPE_CUMULATIVE,
+-                    unit='B',
+-                    volume=long(metrics['rx-bytes']),
+-                    **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.port.transmit.bytes'
+-            try:
+-                yield sample.Sample(
+-                    name=name,
+-                    type=sample.TYPE_CUMULATIVE,
+-                    unit='B',
+-                    volume=long(metrics['tx-bytes']),
+-                    **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.port.receive.packets'
+-            try:
+-                yield sample.Sample(
+-                    name=name,
+-                    type=sample.TYPE_CUMULATIVE,
+-                    unit='packet',
+-                    volume=long(metrics['rx-packets']),
+-                    **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.port.transmit.packets'
+-            try:
+-                yield sample.Sample(
+-                    name=name,
+-                    type=sample.TYPE_CUMULATIVE,
+-                    unit='packet',
+-                    volume=long(metrics['tx-packets']),
+-                    **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.port.receive.util'
+-            try:
+-                if metrics['rx-util'] is not None:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_GAUGE,
+-                        unit='%',
+-                        volume=float(metrics['rx-util']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.port.transmit.util'
+-            try:
+-                if metrics['tx-util'] is not None:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_GAUGE,
+-                        unit='%',
+-                        volume=float(metrics['tx-util']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.port.receive.errors'
+-            try:
+-                if long(metrics['rx-errors']) > 0:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_CUMULATIVE,
+-                        unit='packet',
+-                        volume=long(metrics['rx-errors']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.port.receive.missed'
+-            try:
+-                if long(metrics['rx-missed']) > 0:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_CUMULATIVE,
+-                        unit='packet',
+-                        volume=long(metrics['rx-missed']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.port.transmit.errors'
+-            try:
+-                if long(metrics['tx-errors']) > 0:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_CUMULATIVE,
+-                        unit='packet',
+-                        volume=long(metrics['tx-errors']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-
+-class Interface(VSwitchNotificationBase):
+-    """Convert vswitch interface metering notifications into samples.
+-
+-    """
+-    event_types = ['vswitch.meter.interface']
+-
+-    def process_notification(self, message):
+-        LOG.debug('vswitch interface notification %r', message)
+-
+-        interface_metrics = message['payload']['interface-metrics']
+-
+-        for metrics in interface_metrics:
+-            try:
+-                info = {
+-                    'project_id': metrics['tenant_id'],
+-                    'resource_id': metrics['uuid'],
+-                    'timestamp': message['metadata']['timestamp'],
+-                    'resource_metadata': {
+-                        'host': metrics['host'],
+-                        'network_uuid': metrics['network_uuid']
+-                    },
+-                    'user_id': None
+-                }
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building '
+-                              'sample info: %(e)s') % {'e': err})
+-                return
+-
+-            name = 'vswitch.interface.receive.errors'
+-            try:
+-                if long(metrics['rx-errors']) > 0:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_CUMULATIVE,
+-                        unit='packet',
+-                        volume=long(metrics['rx-errors']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.interface.transmit.errors'
+-            try:
+-                if long(metrics['tx-errors']) > 0:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_CUMULATIVE,
+-                        unit='packet',
+-                        volume=long(metrics['tx-errors']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.interface.receive.discards'
+-            try:
+-                if long(metrics['rx-discards']) > 0:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_CUMULATIVE,
+-                        unit='packet',
+-                        volume=long(metrics['rx-discards']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+-
+-            name = 'vswitch.interface.transmit.discards'
+-            try:
+-                if long(metrics['tx-discards']) > 0:
+-                    yield sample.Sample(
+-                        name=name,
+-                        type=sample.TYPE_CUMULATIVE,
+-                        unit='packet',
+-                        volume=long(metrics['tx-discards']),
+-                        **info)
+-            except Exception as err:
+-                LOG.warning(_('An error occured while building %(m)s '
+-                              'sample: %(e)s') % {'m': name, 'e': err})
+diff --git a/setup.cfg b/setup.cfg
+index 37665b2..44c5ca9 100644
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -44,9 +44,6 @@ zaqar =
+ 
+ [entry_points]
+ ceilometer.notification =
+-    vswitch.meter.engine = ceilometer.vswitch.notifications:Engine
+-    vswitch.meter.port = ceilometer.vswitch.notifications:Port
+-    vswitch.meter.interface = ceilometer.vswitch.notifications:Interface
+     http.request = ceilometer.middleware:HTTPRequest
+     http.response = ceilometer.middleware:HTTPResponse
+     hardware.ipmi.temperature = ceilometer.ipmi.notifications.ironic:TemperatureSensorNotification
+-- 
+2.7.4
+

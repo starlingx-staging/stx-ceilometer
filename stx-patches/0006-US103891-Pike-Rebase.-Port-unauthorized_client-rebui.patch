@@ -1,0 +1,113 @@
+From 30ca2fdc09db07018c2ad6f2743ff50ef4e5ebb5 Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Wed, 11 Jan 2017 16:29:00 -0500
+Subject: [PATCH 06/91] US103891: Pike Rebase. Port unauthorized_client:
+ rebuild nova_client on unauthorized exception
+
+Original commit:
+   eb05690ecf895c8aaa5c0e8d0118f01fdf18ddc6
+
+unauthorized_client: rebuild nova_client on unauthorized exception
+100796fe311afebc11d5b8d30170eec19f1bbd31
+---
+ ceilometer/nova_client.py | 52 ++++++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 42 insertions(+), 10 deletions(-)
+
+diff --git a/ceilometer/nova_client.py b/ceilometer/nova_client.py
+index 905c92d..e7e45c5 100644
+--- a/ceilometer/nova_client.py
++++ b/ceilometer/nova_client.py
+@@ -85,10 +85,6 @@ class Client(object):
+             endpoint_type=creds.interface,
+             service_type=conf.service_types.nova,
+             logger=logger)
+-        # TO DO (dbadea): remove condition after updating nova_client
+-        if hasattr(self.nova_client, 'set_timings_max_len'):
+-            self.nova_client.set_timings_max_len(cfg.CONF.nova_client.
+-                                                 max_timing_buffer)
+ 
+         self.glance_client = glanceclient.Client(
+             version='2',
+@@ -97,6 +93,15 @@ class Client(object):
+             interface=creds.interface,
+             service_type=conf.service_types.glance)
+ 
++        # TO DO (dbadea): remove condition after updating nova_client
++        if hasattr(self.nova_client, 'set_timings_max_len'):
++            self.nova_client.set_timings_max_len(
++                conf.nova_client.max_timing_buffer)
++
++    def rebuild_client(self):
++        LOG.warning("Repairing Nova Client")
++        self.__init__()
++
+     def _with_flavor_and_image(self, instances):
+         flavor_cache = {}
+         image_cache = {}
+@@ -115,6 +120,9 @@ class Client(object):
+                 flavor = self.nova_client.flavors.get(fid)
+             except novaclient.exceptions.NotFound:
+                 flavor = None
++            except novaclient.exceptions.Unauthorized:
++                self.rebuild_client()
++                flavor = None
+             cache[fid] = flavor
+ 
+         attr_defaults = [('name', 'unknown-id-%s' % fid),
+@@ -143,6 +151,9 @@ class Client(object):
+                 image = self.glance_client.images.get(iid)
+             except glanceclient.exc.HTTPNotFound:
+                 image = None
++            except novaclient.exceptions.Unauthorized:
++                self.rebuild_client()
++                image = None
+             cache[iid] = image
+ 
+         attr_defaults = [('kernel_id', None),
+@@ -166,9 +177,15 @@ class Client(object):
+         search_opts = {'host': hostname, 'all_tenants': True}
+         if since:
+             search_opts['changes-since'] = since
+-        return self._with_flavor_and_image(self.nova_client.servers.list(
+-            detailed=True,
+-            search_opts=search_opts))
++        try:
++            return self._with_flavor_and_image(self.nova_client.servers.list(
++                detailed=True,
++                search_opts=search_opts))
++        except novaclient.exceptions.Unauthorized:
++            self.rebuild_client()
++            return self._with_flavor_and_image(self.nova_client.servers.list(
++                detailed=True,
++                search_opts=search_opts))
+ 
+     @logged
+     def instance_get_all(self, since=None):
+@@ -180,6 +197,21 @@ class Client(object):
+         search_opts = {'all_tenants': True}
+         if since:
+             search_opts['changes-since'] = since
+-        return self.nova_client.servers.list(
+-            detailed=True,
+-            search_opts=search_opts)
++        try:
++            return self.nova_client.servers.list(
++                detailed=True,
++                search_opts=search_opts)
++        except novaclient.exceptions.Unauthorized:
++            self.rebuild_client()
++            return self.nova_client.servers.list(
++                detailed=True,
++                search_opts=search_opts)
++
++    @logged
++    def floating_ip_get_all(self):
++        """Returns all floating ips."""
++        try:
++            return self.nova_client.floating_ips.list()
++        except novaclient.exceptions.Unauthorized:
++            self.rebuild_client()
++            return self.nova_client.floating_ips.list()
+-- 
+2.7.4
+

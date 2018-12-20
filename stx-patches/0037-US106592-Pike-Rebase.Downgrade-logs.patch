@@ -1,0 +1,47 @@
+From 13c5331b48b765c295386126799de7b8d44dd653 Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Tue, 2 Jan 2018 15:40:14 -0500
+Subject: [PATCH 37/91] US106592:Pike Rebase.Downgrade logs
+
+Gnocchi is not planned to use in R5 and ceilometer API is kept using.
+Downgrade the unnecessary warnings.
+---
+ ceilometer/api/app.py                 | 4 ++--
+ ceilometer/api/controllers/v2/root.py | 6 +++---
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/ceilometer/api/app.py b/ceilometer/api/app.py
+index 4a67c74..2487363 100644
+--- a/ceilometer/api/app.py
++++ b/ceilometer/api/app.py
+@@ -115,8 +115,8 @@ def load_app(conf, args=None):
+     APPCONFIGS[configkey] = conf
+ 
+     LOG.info("Full WSGI config used: %s", cfg_file)
+-    LOG.warning("Note: Ceilometer API is deprecated; use APIs from Aodh"
+-                " (alarms), Gnocchi (metrics) and/or Panko (events).")
++    LOG.debug("Note: Ceilometer API is deprecated; use APIs from Aodh"
++              " (alarms), Gnocchi (metrics) and/or Panko (events).")
+     return deploy.loadapp("config:" + cfg_file,
+                           global_conf={'configkey': configkey})
+ 
+diff --git a/ceilometer/api/controllers/v2/root.py b/ceilometer/api/controllers/v2/root.py
+index ad958b0..a62be55 100644
+--- a/ceilometer/api/controllers/v2/root.py
++++ b/ceilometer/api/controllers/v2/root.py
+@@ -192,9 +192,9 @@ class V2Controller(object):
+                         "Can't connect to keystone, assuming Panko "
+                         "is disabled and retry later.")
+                 else:
+-                    LOG.warning("ceilometer-api started with Panko "
+-                                "enabled. Events URLs will be redirected "
+-                                "to Panko endpoint.")
++                    LOG.debug("ceilometer-api started with Panko "
++                              "enabled. Events URLs will be redirected "
++                              "to Panko endpoint.")
+         return self._panko_url
+ 
+     @pecan.expose()
+-- 
+2.7.4
+

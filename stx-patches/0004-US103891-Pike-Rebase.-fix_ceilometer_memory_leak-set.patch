@@ -1,0 +1,82 @@
+From 081ba17ef51966e04c9872effb9508c9442a4448 Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Wed, 11 Jan 2017 15:34:17 -0500
+Subject: [PATCH 04/91] US103891: Pike Rebase. fix_ceilometer_memory_leak: set
+ nova client max_timing_buffer
+
+---
+ ceilometer/nova_client.py                | 14 ++++++++++++++
+ ceilometer/tests/unit/test_novaclient.py | 14 ++++++++++++++
+ 2 files changed, 28 insertions(+)
+
+diff --git a/ceilometer/nova_client.py b/ceilometer/nova_client.py
+index 4b258c0..905c92d 100644
+--- a/ceilometer/nova_client.py
++++ b/ceilometer/nova_client.py
+@@ -10,6 +10,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ import functools
+ 
+@@ -29,6 +36,9 @@ OPTS = [
+                 deprecated_for_removal=True,
+                 help=('Allow novaclient\'s debug log output. '
+                       '(Use default_log_levels instead)')),
++    cfg.IntOpt('max_timing_buffer',
++               default=200,
++               help='The max number of the timing objects to keep'),
+ ]
+ 
+ SERVICE_OPTS = [
+@@ -75,6 +85,10 @@ class Client(object):
+             endpoint_type=creds.interface,
+             service_type=conf.service_types.nova,
+             logger=logger)
++        # TO DO (dbadea): remove condition after updating nova_client
++        if hasattr(self.nova_client, 'set_timings_max_len'):
++            self.nova_client.set_timings_max_len(cfg.CONF.nova_client.
++                                                 max_timing_buffer)
+ 
+         self.glance_client = glanceclient.Client(
+             version='2',
+diff --git a/ceilometer/tests/unit/test_novaclient.py b/ceilometer/tests/unit/test_novaclient.py
+index 092d139..632802b 100644
+--- a/ceilometer/tests/unit/test_novaclient.py
++++ b/ceilometer/tests/unit/test_novaclient.py
+@@ -11,6 +11,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ import fixtures
+ import glanceclient
+@@ -247,3 +254,10 @@ class TestNovaClient(base.BaseTestCase):
+         self.CONF.set_override("nova_http_log_debug", True)
+         self.nv = nova_client.Client(self.CONF)
+         self.assertIsNotNone(self.nv.nova_client.client.logger)
++
++    def test_with_max_timing_buffer(self):
++        self.CONF.set_override("max_timing_buffer", 300)
++        self.nv = nova_client.Client(self.CONF)
++        # TO DO (dbadea): remove condition after updating nova_client
++        if hasattr(self.nv.nova_client, 'get_timings_max_len'):
++            self.assertEqual(300, self.nv.nova_client.get_timings_max_len())
+-- 
+2.7.4
+

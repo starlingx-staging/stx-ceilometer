@@ -1,0 +1,173 @@
+From 2118ed5cfcaad60707f7b36a4551c5cd3be389c6 Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Wed, 11 Jan 2017 16:56:38 -0500
+Subject: [PATCH 08/91] US103891: Pike Rebase. Port sqlalchemy fixes
+
+Original commit:
+   2ae038d497e97b257aa9ea929f34d584c8e2bd9d
+
+sqlalchemy: fixes
+
+1576d8a4d158435b0e73f306b6f6a215590e9121
+
+    CGTS-1338: Ceilometer alarm evaluator query on metadata doesn't work
+
+d28e8f89f1c7fd6b58abdda4f916c3527d81700e
+
+    Partially undo ceilometer expirer optimizations that are obsolete in juno
+
+abaf111d04081cce728bcd87cca0ad7d91c2ff93
+
+    metering data ttl sql backend breaks resource metadata
+
+    The implementation for sql clear_expired_metering_data() uses delete()
+    on join() for four metatada tables, which will cause clear whole
+    tables no matter what join returns. And it associates metadata id
+    with sample id which makes no sense, the metadata id is resource's
+    internal id.
+
+    Change-Id: I98219bf27a0a765838d45386b7ae6b6b980b1ae9
+    Closes-Bug: #1419239
+
+    Conflicts:
+
+        ceilometer/storage/impl_sqlalchemy.py
+---
+ ceilometer/storage/impl_sqlalchemy.py              | 14 +++++++++
+ .../versions/037_sample_index_cleanup.py           | 36 +++++++++++++++++++++-
+ ceilometer/storage/sqlalchemy/models.py            | 15 ++++++---
+ 3 files changed, 60 insertions(+), 5 deletions(-)
+
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index d9ea9c3..d493ba2 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -10,6 +10,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ """SQLAlchemy storage backend."""
+ 
+@@ -704,6 +711,11 @@ class Connection(base.Connection):
+         return functions
+ 
+     def _make_stats_query(self, sample_filter, groupby, aggregate):
++        # A meter IS required
++        if not sample_filter:
++            return None
++        if not sample_filter.meter:
++            return None
+ 
+         select = [
+             func.min(models.Sample.timestamp).label('tsmin'),
+@@ -814,6 +826,8 @@ class Connection(base.Connection):
+                 return
+ 
+         query = self._make_stats_query(sample_filter, groupby, aggregate)
++        if not query:
++            return
+         # HACK(jd) This is an awful method to compute stats by period, but
+         # since we're trying to be SQL agnostic we have to write portable
+         # code, so here it is, admire! We're going to do one request to get
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/037_sample_index_cleanup.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/037_sample_index_cleanup.py
+index 18ee7a6..04c62b0 100644
+--- a/ceilometer/storage/sqlalchemy/migrate_repo/versions/037_sample_index_cleanup.py
++++ b/ceilometer/storage/sqlalchemy/migrate_repo/versions/037_sample_index_cleanup.py
+@@ -9,11 +9,35 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
+-
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ from migrate import ForeignKeyConstraint
+ import sqlalchemy as sa
+ 
+ 
++class MetaConstraint(object):
++    def __init__(self, meta, tablename, constraint_name):
++        sample = sa.Table('sample', meta, autoload=True)
++        meta_table = sa.Table(tablename, meta, autoload=True)
++        self.meta_params = {'columns': [meta_table.c.id],
++                            'refcolumns': [sample.c.id],
++                            'use_alter': True,
++                            'name': constraint_name,
++                            'ondelete': 'CASCADE',
++                            }
++
++    def __enter__(self):
++        ForeignKeyConstraint(**self.meta_params).drop()
++
++    def __exit__(self, type, value, traceback):
++        ForeignKeyConstraint(**self.meta_params).create()
++
++
+ class ForeignKeyHandle(object):
+     def __init__(self, meta):
+         sample = sa.Table('sample', meta, autoload=True)
+@@ -42,3 +66,13 @@ def upgrade(migrate_engine):
+             if index.name in ['fk_sample_meter_id', 'fk_sample_resource_id']:
+                 index.drop()
+         sa.Index('ix_sample_meter_id', sample.c.meter_id).create()
++
++    # making use of __enter__ and __exit__ using the 'with' clause
++    with MetaConstraint(meta, 'metadata_text', 'metadata_text_id_fkey'):
++        pass
++    with MetaConstraint(meta, 'metadata_float', 'metadata_float_id_fkey'):
++        pass
++    with MetaConstraint(meta, 'metadata_int', 'metadata_int_id_fkey'):
++        pass
++    with MetaConstraint(meta, 'metadata_bool', 'metadata_bool_id_fkey'):
++        pass
+diff --git a/ceilometer/storage/sqlalchemy/models.py b/ceilometer/storage/sqlalchemy/models.py
+index 386d736..4498643 100644
+--- a/ceilometer/storage/sqlalchemy/models.py
++++ b/ceilometer/storage/sqlalchemy/models.py
+@@ -9,6 +9,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ """
+ SQLAlchemy models for Ceilometer data.
+@@ -194,13 +201,13 @@ class Resource(Base):
+     metadata_hash = deferred(Column(String(32)))
+     samples = relationship("Sample", backref="resource")
+     meta_text = relationship("MetaText", backref="resource",
+-                             cascade="all, delete-orphan")
++                             cascade="all, delete, delete-orphan")
+     meta_float = relationship("MetaFloat", backref="resource",
+-                              cascade="all, delete-orphan")
++                              cascade="all, delete, delete-orphan")
+     meta_int = relationship("MetaBigInt", backref="resource",
+-                            cascade="all, delete-orphan")
++                            cascade="all, delete, delete-orphan")
+     meta_bool = relationship("MetaBool", backref="resource",
+-                             cascade="all, delete-orphan")
++                             cascade="all, delete, delete-orphan")
+ 
+ 
+ @event.listens_for(Resource, "before_insert")
+-- 
+2.7.4
+

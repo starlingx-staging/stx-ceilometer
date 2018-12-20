@@ -1,0 +1,46 @@
+From 9dfc7818db3d373be35f2d93142965c65f6c047d Mon Sep 17 00:00:00 2001
+From: Nakul Dahiwade <nakul.dahiwade@gmail.com>
+Date: Mon, 16 Apr 2018 11:51:10 -0700
+Subject: [PATCH 90/91] fix vswitch import error
+
+---
+ ceilometer/notification.py | 2 +-
+ ceilometer/opts.py         | 2 --
+ 2 files changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/ceilometer/notification.py b/ceilometer/notification.py
+index 3d8a873..4e6617d 100644
+--- a/ceilometer/notification.py
++++ b/ceilometer/notification.py
+@@ -90,7 +90,7 @@ EXCHANGES_OPTS = [
+     cfg.MultiStrOpt('notification_control_exchanges',
+                     default=['nova', 'glance', 'neutron', 'cinder', 'heat',
+                              'keystone', 'sahara', 'trove', 'zaqar', 'swift',
+-                             'ceilometer', 'magnum', 'dns', 'vswitch'],
++                             'ceilometer', 'magnum', 'dns'],
+                     deprecated_group='DEFAULT',
+                     deprecated_name="http_control_exchanges",
+                     help="Exchanges name to listen for notifications."),
+diff --git a/ceilometer/opts.py b/ceilometer/opts.py
+index 48d0f12..e97025c 100644
+--- a/ceilometer/opts.py
++++ b/ceilometer/opts.py
+@@ -54,7 +54,6 @@ import ceilometer.sample
+ import ceilometer.storage
+ import ceilometer.utils
+ import ceilometer.volume.discovery
+-import ceilometer.vswitch.notifications
+ 
+ 
+ OPTS = [
+@@ -101,7 +100,6 @@ def list_opts():
+                          ceilometer.sample.OPTS,
+                          ceilometer.utils.OPTS,
+                          ceilometer.exchange_control.EXCHANGE_OPTS,
+-                         ceilometer.vswitch.notifications.OPTS,
+                          OPTS)),
+         ('api', itertools.chain(ceilometer.api.app.API_OPTS,
+                                 ceilometer.api.controllers.v2.root.API_OPTS)),
+-- 
+2.7.4
+

@@ -1,0 +1,90 @@
+From 57e60d774a1a49af3d2ce8c96afb2ed832d917d9 Mon Sep 17 00:00:00 2001
+From: WenyanZhang <zhang.wenyan3@zte.com.cn>
+Date: Thu, 2 Nov 2017 14:48:31 +0800
+Subject: [PATCH 52/91] Fix bug for ceilometer polling generates an exception
+
+When the "cdrom" device associated to the configdrive ,
+which no longer has a "source" element.
+
+It is a normal and expected situation which shouldn't generate any logs.
+
+Change-Id: Ia9910f6aec1b2cc8db99d8468e42b840b387130c
+Closes-Bug: #1729506
+(cherry picked from commit a141c6da5d5558b0be4b634015c4adbe815f6f28)
+---
+ ceilometer/compute/virt/libvirt/inspector.py       |  3 +-
+ .../unit/compute/virt/libvirt/test_inspector.py    | 38 ++++++++++++++++++++++
+ 2 files changed, 40 insertions(+), 1 deletion(-)
+ mode change 100644 => 100755 ceilometer/compute/virt/libvirt/inspector.py
+ mode change 100644 => 100755 ceilometer/tests/unit/compute/virt/libvirt/test_inspector.py
+
+diff --git a/ceilometer/compute/virt/libvirt/inspector.py b/ceilometer/compute/virt/libvirt/inspector.py
+old mode 100644
+new mode 100755
+index d3dfa63..56b1853
+--- a/ceilometer/compute/virt/libvirt/inspector.py
++++ b/ceilometer/compute/virt/libvirt/inspector.py
+@@ -130,7 +130,8 @@ class LibvirtInspector(virt_inspector.Inspector):
+         for device in filter(
+                 bool,
+                 [target.get("dev")
+-                 for target in tree.findall('devices/disk/target')]):
++                 for target in tree.findall('devices/disk/target')
++                 if target.getparent().find('source') is not None]):
+             block_stats = domain.blockStats(device)
+             yield virt_inspector.DiskStats(device=device,
+                                            read_requests=block_stats[0],
+diff --git a/ceilometer/tests/unit/compute/virt/libvirt/test_inspector.py b/ceilometer/tests/unit/compute/virt/libvirt/test_inspector.py
+old mode 100644
+new mode 100755
+index 46325d1..c88693f
+--- a/ceilometer/tests/unit/compute/virt/libvirt/test_inspector.py
++++ b/ceilometer/tests/unit/compute/virt/libvirt/test_inspector.py
+@@ -403,6 +403,44 @@ class TestLibvirtInspection(base.BaseTestCase):
+             disks = list(self.inspector.inspect_disk_info(self.instance, None))
+             self.assertEqual(0, len(disks))
+ 
++    def test_inspect_disks_without_source_element(self):
++        dom_xml = """
++             <domain type='kvm'>
++                 <devices>
++                    <disk type='file' device='cdrom'>
++                        <driver name='qemu' type='raw' cache='none'/>
++                        <backingStore/>
++                        <target dev='hdd' bus='ide' tray='open'/>
++                        <readonly/>
++                        <alias name='ide0-1-1'/>
++                        <address type='drive' controller='0' bus='1'
++                                 target='0' unit='1'/>
++                     </disk>
++                 </devices>
++             </domain>
++        """
++        blockStatsFlags = {'wr_total_times': 91752302267,
++                           'rd_operations': 6756,
++                           'flush_total_times': 1310427331,
++                           'rd_total_times': 29142253616,
++                           'rd_bytes': 171460096,
++                           'flush_operations': 746,
++                           'wr_operations': 1437,
++                           'wr_bytes': 13574656}
++        domain = mock.Mock()
++        domain.XMLDesc.return_value = dom_xml
++        domain.info.return_value = (0, 0, 0, 2, 999999)
++        domain.blockStats.return_value = (1, 2, 3, 4, -1)
++        domain.blockStatsFlags.return_value = blockStatsFlags
++        conn = mock.Mock()
++        conn.lookupByUUIDString.return_value = domain
++
++        with mock.patch('ceilometer.compute.virt.libvirt.utils.'
++                        'refresh_libvirt_connection', return_value=conn):
++            disks = list(self.inspector.inspect_disks(self.instance, None))
++
++            self.assertEqual(0, len(disks))
++
+     def test_inspect_memory_usage_with_domain_shutoff(self):
+         domain = mock.Mock()
+         domain.info.return_value = (5, 0, 51200, 2, 999999)
+-- 
+2.7.4
+

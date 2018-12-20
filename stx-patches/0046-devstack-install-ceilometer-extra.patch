@@ -1,0 +1,35 @@
+From 965b6fb8975be14f90f628b2da1af14090ac11f2 Mon Sep 17 00:00:00 2001
+From: Mehdi Abaakouk <sileht@redhat.com>
+Date: Thu, 28 Sep 2017 14:08:19 +0200
+Subject: [PATCH 46/91] devstack: install ceilometer extra
+
+Change-Id: I93ced9915e493f36fe3af42267a798b7ef30e40b
+Closes-bug: #1720120
+(cherry picked from commit f67e4e0cf5106ef552e593e9726864f77fbd42bf)
+---
+ devstack/plugin.sh | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/devstack/plugin.sh b/devstack/plugin.sh
+index 4c79927..04e8674 100644
+--- a/devstack/plugin.sh
++++ b/devstack/plugin.sh
+@@ -443,7 +443,14 @@ function install_ceilometer {
+     fi
+ 
+     install_ceilometerclient
+-    setup_develop $CEILOMETER_DIR
++
++    case $CEILOMETER_BACKEND in
++        mongodb) extra=mongo;;
++        gnocchi) extra=gnocchi;;
++        mysql) extra=mysql;;
++        postgresql) extra=postgresql;;
++    esac
++    setup_develop $CEILOMETER_DIR $extra
+     sudo install -d -o $STACK_USER -m 755 $CEILOMETER_CONF_DIR
+ }
+ 
+-- 
+2.7.4
+

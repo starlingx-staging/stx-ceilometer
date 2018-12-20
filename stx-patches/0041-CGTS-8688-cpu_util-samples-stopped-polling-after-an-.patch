@@ -1,0 +1,94 @@
+From 1f9dfda9ee5896e335de50c735a06b03bb775f16 Mon Sep 17 00:00:00 2001
+From: Al Bailey <Al.Bailey@windriver.com>
+Date: Thu, 11 Jan 2018 14:57:15 -0600
+Subject: [PATCH 41/91] CGTS-8688 cpu_util samples stopped polling after an
+ error occurred
+
+A VM had a problem, so the samples from the working VMs stopped being polled.
+This fix makes those exceptions not break existing samples.
+---
+ ceilometer/compute/pollsters/__init__.py               |  4 +++-
+ ceilometer/tests/unit/compute/pollsters/test_memory.py | 13 ++++++++-----
+ ceilometer/tests/unit/compute/pollsters/test_perf.py   |  5 +++--
+ 3 files changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/ceilometer/compute/pollsters/__init__.py b/ceilometer/compute/pollsters/__init__.py
+index 64fa0f8..f2b0a70 100644
+--- a/ceilometer/compute/pollsters/__init__.py
++++ b/ceilometer/compute/pollsters/__init__.py
+@@ -158,7 +158,9 @@ class GenericComputePollster(plugin_base.PollsterBase):
+                             '%(instance_id)s, non-fatal reason: %(exc)s',
+                             {'pollster': self.__class__.__name__,
+                              'instance_id': instance.id, 'exc': e})
+-                raise plugin_base.PollsterPermanentError(resources)
++                # CGTS-8688. Do not declare this a permanent error
++                # since other resources may be fine
++                # raise plugin_base.PollsterPermanentError(resources)
+             except ceilometer.NotImplementedError:
+                 # Selected inspector does not implement this pollster.
+                 LOG.debug('%(inspector)s does not provide data for '
+diff --git a/ceilometer/tests/unit/compute/pollsters/test_memory.py b/ceilometer/tests/unit/compute/pollsters/test_memory.py
+index 6ce8fc4..87d1927 100644
+--- a/ceilometer/tests/unit/compute/pollsters/test_memory.py
++++ b/ceilometer/tests/unit/compute/pollsters/test_memory.py
+@@ -16,7 +16,7 @@
+ import mock
+ 
+ from ceilometer.agent import manager
+-from ceilometer.agent import plugin_base
++# from ceilometer.agent import plugin_base
+ from ceilometer.compute.pollsters import instance_stats
+ from ceilometer.compute.virt import inspector as virt_inspector
+ from ceilometer.tests.unit.compute.pollsters import base
+@@ -64,8 +64,9 @@ class TestMemoryPollster(base.TestPollsterBase):
+         def all_samples():
+             return list(pollster.get_samples(mgr, {}, [self.instance]))
+ 
+-        self.assertRaises(plugin_base.PollsterPermanentError,
+-                          all_samples)
++        # self.assertRaises(plugin_base.PollsterPermanentError,
++        #                  all_samples)
++        all_samples()
+ 
+ 
+ class TestResidentMemoryPollster(base.TestPollsterBase):
+@@ -146,7 +147,8 @@ class TestMemorySwapPollster(base.TestPollsterBase):
+         def all_samples():
+             return list(pollster.get_samples(mgr, {}, [self.instance]))
+ 
+-        self.assertRaises(plugin_base.PollsterPermanentError, all_samples)
++        # self.assertNotRaises(plugin_base.PollsterPermanentError, all_samples)
++        all_samples()
+ 
+ 
+ class TestMemoryBandwidthPollster(base.TestPollsterBase):
+@@ -192,4 +194,5 @@ class TestMemoryBandwidthPollster(base.TestPollsterBase):
+         def all_samples():
+             return list(pollster.get_samples(mgr, {}, [self.instance]))
+ 
+-        self.assertRaises(plugin_base.PollsterPermanentError, all_samples)
++        # self.assertNotRaises(plugin_base.PollsterPermanentError, all_samples)
++        all_samples()
+diff --git a/ceilometer/tests/unit/compute/pollsters/test_perf.py b/ceilometer/tests/unit/compute/pollsters/test_perf.py
+index 4be7a41..ce68324 100644
+--- a/ceilometer/tests/unit/compute/pollsters/test_perf.py
++++ b/ceilometer/tests/unit/compute/pollsters/test_perf.py
+@@ -15,7 +15,7 @@
+ import mock
+ 
+ from ceilometer.agent import manager
+-from ceilometer.agent import plugin_base
++# from ceilometer.agent import plugin_base
+ from ceilometer.compute.pollsters import instance_stats
+ from ceilometer.compute.virt import inspector as virt_inspector
+ from ceilometer.tests.unit.compute.pollsters import base
+@@ -85,4 +85,5 @@ class TestPerfPollster(base.TestPollsterBase):
+         def all_samples():
+             return list(pollster.get_samples(mgr, {}, [self.instance]))
+ 
+-        self.assertRaises(plugin_base.PollsterPermanentError, all_samples)
++        # self.assertRaises(plugin_base.PollsterPermanentError, all_samples)
++        all_samples()
+-- 
+2.7.4
+

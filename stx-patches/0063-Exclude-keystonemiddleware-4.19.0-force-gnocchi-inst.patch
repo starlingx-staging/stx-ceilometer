@@ -1,0 +1,60 @@
+From 1e78c5756344b962e81f0917582b3e79b36af346 Mon Sep 17 00:00:00 2001
+From: Joseph Davis <joseph.davis@suse.com>
+Date: Fri, 8 Dec 2017 10:31:16 -0800
+Subject: [PATCH 63/91] Exclude keystonemiddleware 4.19.0, force gnocchi
+ install in devstack
+
+keystonemiddleware 4.19.0 introduced a dependency on memcache and
+pulled in dogpile.cache and oslo.cache, causing gate failures.
+Future versions of keystonemiddleware should be fixed by
+commit 0c5070a035ca2eea200c5a7ab6b40375498463ac in that repo.
+
+Note that in Queens and beyond the requirement for keystonemiddleware
+has been removed from Ceilometer, so this fix cannot be placed on
+the master branch.
+
+also, change to make gnocchi install from pip rather than master
+
+Change-Id: Ibea7049f9fca0783b9ecf54a75bccbc27aef2187
+---
+ devstack/plugin.sh | 8 +++++---
+ requirements.txt   | 2 +-
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/devstack/plugin.sh b/devstack/plugin.sh
+index d02da30..5a152f8 100644
+--- a/devstack/plugin.sh
++++ b/devstack/plugin.sh
+@@ -199,11 +199,13 @@ function ceilometer_create_accounts {
+ 
+ function install_gnocchi {
+     echo_summary "Installing Gnocchi"
+-    if [ $GNOCCHI_GIT_PATH ]; then
+-        pip_install -e $GNOCCHI_GIT_PATH[redis,${DATABASE_TYPE},keystone] uwsgi
++    if python3_enabled; then
++        PY_VERS=${PYTHON3_VERSION}
+     else
+-        pip_install gnocchi[redis,${DATABASE_TYPE},keystone] uwsgi
++        PY_VERS=${PYTHON2_VERSION}
+     fi
++    # workaround for upper-constraints.
++    sudo -H python${PY_VERS} -m pip install -U gnocchi[redis,${DATABASE_TYPE},keystone]
+     recreate_database gnocchi
+     sudo install -d -o $STACK_USER -m 755 $GNOCCHI_CONF_DIR
+ 
+diff --git a/requirements.txt b/requirements.txt
+index d8c848c..b352b9f 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -10,7 +10,7 @@ debtcollector>=1.2.0 # Apache-2.0
+ jsonpath-rw-ext>=0.1.9 # Apache-2.0
+ jsonschema!=2.5.0,<3.0.0,>=2.0.0 # MIT
+ kafka-python>=1.3.2 # Apache-2.0
+-keystonemiddleware!=4.19.0,>=4.12.0 # Apache-2.0
++keystonemiddleware!=4.19.0,!=4.1.0,>=4.0.0 # Apache-2.0
+ lxml>=2.3 # BSD
+ monotonic
+ msgpack-python>=0.4.0 # Apache-2.0
+-- 
+2.7.4
+

@@ -1,0 +1,51 @@
+From eac35d001aefc931d43a8094751de87ee0c20e68 Mon Sep 17 00:00:00 2001
+From: Tao Liu <tao.liu@windriver.com>
+Date: Wed, 7 Feb 2018 15:44:57 -0600
+Subject: [PATCH 79/91] CGTS-7893: parse IPMI sensor data failed, unknown
+ sensor type data
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When the sensor reading type is not set correctly the “unknown sensor type data”
+error log is generated. In Nokia case, these logs are generated for the sensors that
+do not support reading (event only sensor) and Nokia would like to mask the logs for
+the event only sensors.
+
+The current implementation attempts to extract the sensor reading type prior to check
+whether the sensor supports the reading. The fix is to only retrieve the sensor reading
+type for the sensor that supports reading.
+
+Submitted for: CGTS-7893
+---
+ ceilometer/ipmi/platform/ipmitool.py | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/ceilometer/ipmi/platform/ipmitool.py b/ceilometer/ipmi/platform/ipmitool.py
+index 17d11c6..b1b1970 100644
+--- a/ceilometer/ipmi/platform/ipmitool.py
++++ b/ceilometer/ipmi/platform/ipmitool.py
+@@ -68,14 +68,15 @@ def _translate_output(output):
+         if not sensor_data_dict:
+             continue
+ 
+-        sensor_type = _get_sensor_type(sensor_data_dict)
+-        # ignore the sensors that have unknown types
+-        if sensor_type is None:
+-            continue
+-
+         # ignore the sensors which have no current 'Sensor Reading' data
+         sensor_id = sensor_data_dict['Sensor ID']
+         if 'Sensor Reading' in sensor_data_dict:
++            # obtain the sensor reading type if the sensor supports
++            # reading
++            sensor_type = _get_sensor_type(sensor_data_dict)
++            # ignore the sensors that have unknown types
++            if sensor_type is None:
++                continue
+             sensors_data_dict.setdefault(sensor_type,
+                                          {})[sensor_id] = sensor_data_dict
+ 
+-- 
+2.7.4
+

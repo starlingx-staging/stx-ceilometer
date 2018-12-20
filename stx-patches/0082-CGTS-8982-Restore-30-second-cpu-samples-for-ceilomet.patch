@@ -1,0 +1,27 @@
+From 1bfa16593fa4922cd15b9b2043a0823ebe39d7f5 Mon Sep 17 00:00:00 2001
+From: Al Bailey <Al.Bailey@windriver.com>
+Date: Wed, 21 Feb 2018 12:17:58 -0600
+Subject: [PATCH 82/91] CGTS-8982  Restore 30 second cpu samples for ceilometer
+
+Fix for  CGTS-8653 reduced the sample rate from 30 seconds to 5 minutes.
+This sets it back.  Further commits are forthcoming for 8653
+---
+ etc/ceilometer/polling.yaml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/etc/ceilometer/polling.yaml b/etc/ceilometer/polling.yaml
+index 83876b6..6e8fffb 100644
+--- a/etc/ceilometer/polling.yaml
++++ b/etc/ceilometer/polling.yaml
+@@ -15,7 +15,7 @@ sources:
+         - disk.allocation
+         - disk.usage
+     - name: instance_cpu_pollster
+-      interval: 300
++      interval: 30
+       meters:
+         - cpu
+     - name: instance_disk_pollster
+-- 
+2.7.4
+

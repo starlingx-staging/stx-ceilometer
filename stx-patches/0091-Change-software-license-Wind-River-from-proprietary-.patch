@@ -1,0 +1,387 @@
+From 73d35542ba962aadec1f0b596b8add871eead16d Mon Sep 17 00:00:00 2001
+From: Jesus Ornelas Aguayo <jesus.ornelas.aguayo@intel.com>
+Date: Fri, 4 May 2018 20:10:34 -0400
+Subject: [PATCH 91/91] Change software license Wind River from proprietary to
+ Apache 2.0
+
+This commit changes the Wind River software license to Apache 2.0
+by adding SPDX-License-Identifier: Apache-2.0 and removing the
+following:
+
+The right to copy, distribute, modify, or otherwise make use
+of this software may be licensed only pursuant to the terms
+of an applicable Wind River license agreement.
+
+Signed-off-by: Jesus Ornelas Aguayo <jesus.ornelas.aguayo@intel.com>
+---
+ ceilometer/api/app.py                                                 | 4 ----
+ ceilometer/api/controllers/v2/extensions.py                           | 4 ----
+ ceilometer/api/controllers/v2/meters.py                               | 4 ----
+ ceilometer/api/controllers/v2/metertypes.py                           | 4 ----
+ ceilometer/api/controllers/v2/pipelines.py                            | 4 ----
+ ceilometer/api/controllers/v2/resources.py                            | 4 ----
+ ceilometer/api/controllers/v2/root.py                                 | 4 ----
+ ceilometer/api/controllers/v2/statistics.py                           | 4 ----
+ ceilometer/collector.py                                               | 4 ----
+ ceilometer/compute/virt/hyperv/inspector.py                           | 4 ----
+ ceilometer/compute/virt/inspector.py                                  | 4 ----
+ ceilometer/compute/virt/libvirt/inspector.py                          | 4 ----
+ ceilometer/nova_client.py                                             | 4 ----
+ ceilometer/publisher/csvfile.py                                       | 4 ----
+ ceilometer/storage/impl_sqlalchemy.py                                 | 4 ----
+ .../sqlalchemy/migrate_repo/versions/037_sample_index_cleanup.py      | 4 ----
+ .../versions/045_add_unique_constraint_and_stored_proc.py             | 3 ---
+ .../sqlalchemy/migrate_repo/versions/046_sample_id_int_is_bigint.py   | 3 ---
+ ceilometer/storage/sqlalchemy/models.py                               | 4 ----
+ ceilometer/tests/unit/compute/pollsters/test_cpu.py                   | 4 ----
+ ceilometer/tests/unit/test_decoupled_pipeline.py                      | 4 ----
+ ceilometer/tests/unit/test_middleware.py                              | 4 ----
+ ceilometer/tests/unit/test_novaclient.py                              | 4 ----
+ 23 files changed, 90 deletions(-)
+
+diff --git a/ceilometer/api/app.py b/ceilometer/api/app.py
+index 2487363..c4127cb 100644
+--- a/ceilometer/api/app.py
++++ b/ceilometer/api/app.py
+@@ -16,10 +16,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ import os
+ import uuid
+diff --git a/ceilometer/api/controllers/v2/extensions.py b/ceilometer/api/controllers/v2/extensions.py
+index c8d59c7..d7b0ca4 100644
+--- a/ceilometer/api/controllers/v2/extensions.py
++++ b/ceilometer/api/controllers/v2/extensions.py
+@@ -15,10 +15,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ from pecan import rest
+ from wsme import types as wtypes
+ import wsmeext.pecan as wsme_pecan
+diff --git a/ceilometer/api/controllers/v2/meters.py b/ceilometer/api/controllers/v2/meters.py
+index 7ce1ad7..0a72e93 100644
+--- a/ceilometer/api/controllers/v2/meters.py
++++ b/ceilometer/api/controllers/v2/meters.py
+@@ -20,10 +20,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ import base64
+ import datetime
+diff --git a/ceilometer/api/controllers/v2/metertypes.py b/ceilometer/api/controllers/v2/metertypes.py
+index bbcffa7..ddea4a3 100644
+--- a/ceilometer/api/controllers/v2/metertypes.py
++++ b/ceilometer/api/controllers/v2/metertypes.py
+@@ -12,10 +12,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ import pecan
+ from pecan import rest
+ from wsme import types as wtypes
+diff --git a/ceilometer/api/controllers/v2/pipelines.py b/ceilometer/api/controllers/v2/pipelines.py
+index fb9b376..badca9f 100644
+--- a/ceilometer/api/controllers/v2/pipelines.py
++++ b/ceilometer/api/controllers/v2/pipelines.py
+@@ -15,10 +15,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ from ceilometer.api.controllers.v2 import base
+ from ceilometer.i18n import _
+ from ceilometer import pipeline as pipeline_t
+diff --git a/ceilometer/api/controllers/v2/resources.py b/ceilometer/api/controllers/v2/resources.py
+index 883e85b..b03e7b6 100644
+--- a/ceilometer/api/controllers/v2/resources.py
++++ b/ceilometer/api/controllers/v2/resources.py
+@@ -20,10 +20,6 @@
+ #
+ # Copyright (c) 2013-2016 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ import ast
+ import datetime
+diff --git a/ceilometer/api/controllers/v2/root.py b/ceilometer/api/controllers/v2/root.py
+index a62be55..624126d 100644
+--- a/ceilometer/api/controllers/v2/root.py
++++ b/ceilometer/api/controllers/v2/root.py
+@@ -20,10 +20,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ from keystoneauth1 import exceptions
+ from oslo_config import cfg
+diff --git a/ceilometer/api/controllers/v2/statistics.py b/ceilometer/api/controllers/v2/statistics.py
+index bbf1f4d..10adb9b 100644
+--- a/ceilometer/api/controllers/v2/statistics.py
++++ b/ceilometer/api/controllers/v2/statistics.py
+@@ -15,10 +15,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ import pecan
+ from pecan import rest
+ from wsme import types as wtypes
+diff --git a/ceilometer/collector.py b/ceilometer/collector.py
+index dd7399d..3dee743 100644
+--- a/ceilometer/collector.py
++++ b/ceilometer/collector.py
+@@ -15,10 +15,6 @@
+ #
+ # Copyright (c) 2013-2016 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ from itertools import chain
+ import select
+diff --git a/ceilometer/compute/virt/hyperv/inspector.py b/ceilometer/compute/virt/hyperv/inspector.py
+index 8ecfd3c..13ee4c8 100644
+--- a/ceilometer/compute/virt/hyperv/inspector.py
++++ b/ceilometer/compute/virt/hyperv/inspector.py
+@@ -15,10 +15,6 @@
+ #
+ # Copyright (c) 2014-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ import collections
+ import functools
+diff --git a/ceilometer/compute/virt/inspector.py b/ceilometer/compute/virt/inspector.py
+index 6ef8899..b9b6acf 100644
+--- a/ceilometer/compute/virt/inspector.py
++++ b/ceilometer/compute/virt/inspector.py
+@@ -16,10 +16,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ import collections
+ 
+ from oslo_config import cfg
+diff --git a/ceilometer/compute/virt/libvirt/inspector.py b/ceilometer/compute/virt/libvirt/inspector.py
+index 0b21b6c..2a9d30e 100755
+--- a/ceilometer/compute/virt/libvirt/inspector.py
++++ b/ceilometer/compute/virt/libvirt/inspector.py
+@@ -16,10 +16,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ from lxml import etree
+ from oslo_log import log as logging
+diff --git a/ceilometer/nova_client.py b/ceilometer/nova_client.py
+index 013fd34..f447b7a 100644
+--- a/ceilometer/nova_client.py
++++ b/ceilometer/nova_client.py
+@@ -13,10 +13,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ import functools
+ 
+diff --git a/ceilometer/publisher/csvfile.py b/ceilometer/publisher/csvfile.py
+index cfd2d13..b9ed549 100644
+--- a/ceilometer/publisher/csvfile.py
++++ b/ceilometer/publisher/csvfile.py
+@@ -21,10 +21,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ ##############################################################################
+ # CompressingRotatingFileHandler
+ # derived from logging.handlers.RotatingFileHandler
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index efc403f..7fb2af0 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -13,10 +13,6 @@
+ #
+ # Copyright (c) 2013-2016 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ """SQLAlchemy storage backend."""
+ 
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/037_sample_index_cleanup.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/037_sample_index_cleanup.py
+index 04c62b0..d5711fc 100644
+--- a/ceilometer/storage/sqlalchemy/migrate_repo/versions/037_sample_index_cleanup.py
++++ b/ceilometer/storage/sqlalchemy/migrate_repo/versions/037_sample_index_cleanup.py
+@@ -12,10 +12,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ from migrate import ForeignKeyConstraint
+ import sqlalchemy as sa
+ 
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py
+index 89aebe3..4d9829c 100644
+--- a/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py
++++ b/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py
+@@ -12,9 +12,6 @@
+ #
+ # Copyright (c) 2016 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+ 
+ from migrate.changeset.constraint import UniqueConstraint
+ import sqlalchemy as sa
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/046_sample_id_int_is_bigint.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/046_sample_id_int_is_bigint.py
+index 79e5d87..ef502d2 100644
+--- a/ceilometer/storage/sqlalchemy/migrate_repo/versions/046_sample_id_int_is_bigint.py
++++ b/ceilometer/storage/sqlalchemy/migrate_repo/versions/046_sample_id_int_is_bigint.py
+@@ -12,9 +12,6 @@
+ #
+ # Copyright (c) 2017 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+ 
+ from sqlalchemy import BigInteger
+ from sqlalchemy import Integer
+diff --git a/ceilometer/storage/sqlalchemy/models.py b/ceilometer/storage/sqlalchemy/models.py
+index 59c815f..c23aa02 100644
+--- a/ceilometer/storage/sqlalchemy/models.py
++++ b/ceilometer/storage/sqlalchemy/models.py
+@@ -12,10 +12,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ """
+ SQLAlchemy models for Ceilometer data.
+diff --git a/ceilometer/tests/unit/compute/pollsters/test_cpu.py b/ceilometer/tests/unit/compute/pollsters/test_cpu.py
+index 79180e5..3676053 100644
+--- a/ceilometer/tests/unit/compute/pollsters/test_cpu.py
++++ b/ceilometer/tests/unit/compute/pollsters/test_cpu.py
+@@ -16,10 +16,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ import time
+ 
+ import mock
+diff --git a/ceilometer/tests/unit/test_decoupled_pipeline.py b/ceilometer/tests/unit/test_decoupled_pipeline.py
+index 21285b4..f65a02c 100644
+--- a/ceilometer/tests/unit/test_decoupled_pipeline.py
++++ b/ceilometer/tests/unit/test_decoupled_pipeline.py
+@@ -15,10 +15,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ import yaml
+ 
+ from ceilometer import pipeline
+diff --git a/ceilometer/tests/unit/test_middleware.py b/ceilometer/tests/unit/test_middleware.py
+index 855a0f7..ef1378d 100644
+--- a/ceilometer/tests/unit/test_middleware.py
++++ b/ceilometer/tests/unit/test_middleware.py
+@@ -15,10 +15,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ import mock
+ 
+ from ceilometer import middleware
+diff --git a/ceilometer/tests/unit/test_novaclient.py b/ceilometer/tests/unit/test_novaclient.py
+index 632802b..1a35c14 100644
+--- a/ceilometer/tests/unit/test_novaclient.py
++++ b/ceilometer/tests/unit/test_novaclient.py
+@@ -14,10 +14,6 @@
+ #
+ # Copyright (c) 2013-2015 Wind River Systems, Inc.
+ #
+-# The right to copy, distribute, modify, or otherwise make use
+-# of this software may be licensed only pursuant to the terms
+-# of an applicable Wind River license agreement.
+-#
+ 
+ import fixtures
+ import glanceclient
+-- 
+2.7.4
+

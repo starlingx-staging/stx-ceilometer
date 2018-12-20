@@ -1,0 +1,327 @@
+From febdc9b1b9c0cc29dc44871c683ed0510718b993 Mon Sep 17 00:00:00 2001
+From: gord chung <gord@live.ca>
+Date: Wed, 8 Nov 2017 17:51:24 +0000
+Subject: [PATCH 56/91] update install docs
+
+- remove ceilometerclient. we don't need this.
+- add docs on how to install gnocchi using openstack packages
+
+Closes-Bug: #1687839
+Change-Id: I2f932fbe0b48bb11aa68d47e77aa2dc07af21731
+(cherry picked from commit 2696ef6112dd07b127a8ce0d5d4421d99c6ffa4a)
+---
+ doc/source/install/install-base-config-common.inc | 31 +--------
+ doc/source/install/install-base-obs.rst           | 37 +++++++++-
+ doc/source/install/install-base-rdo.rst           | 37 +++++++++-
+ doc/source/install/install-base-ubuntu.rst        | 33 ++++++++-
+ doc/source/install/install-gnocchi.inc            | 83 +++++++++++++++++++++++
+ 5 files changed, 182 insertions(+), 39 deletions(-)
+ create mode 100644 doc/source/install/install-gnocchi.inc
+
+diff --git a/doc/source/install/install-base-config-common.inc b/doc/source/install/install-base-config-common.inc
+index d478bf6..849921c 100644
+--- a/doc/source/install/install-base-config-common.inc
++++ b/doc/source/install/install-base-config-common.inc
+@@ -42,36 +42,7 @@
+      Replace ``CEILOMETER_PASS`` with the password you chose for
+      the ``ceilometer`` user in the Identity service.
+ 
+-3. Edit the ``/etc/gnocchi/gnocchi.conf`` file and add Keystone options:
+-
+-   * In the ``[api]`` section, configure gnocchi to use keystone:
+-
+-     .. code-block:: ini
+-
+-        [api]
+-        auth_mode = keystone
+-
+-   * In the ``[keystone_authtoken]`` section, configure keystone
+-     authentication:
+-
+-     .. code-block:: ini
+-
+-        [keystone_authtoken]
+-        ...
+-        auth_type = password
+-        auth_url = http://controller:5000/v3
+-        project_domain_name = Default
+-        user_domain_name = Default
+-        project_name = service
+-        username = gnocchi
+-        password = GNOCCHI_PASS
+-        interface = internalURL
+-        region_name = RegionOne
+-
+-     Replace ``GNOCCHI_PASS`` with the password you chose for
+-     the ``gnocchi`` user in the Identity service.
+-
+-4. Create Ceilometer resources in Gnocchi. Gnocchi should be running by this
++3. Create Ceilometer resources in Gnocchi. Gnocchi should be running by this
+    stage:
+ 
+    .. code-block:: console
+diff --git a/doc/source/install/install-base-obs.rst b/doc/source/install/install-base-obs.rst
+index 5f18996..a793584 100644
+--- a/doc/source/install/install-base-obs.rst
++++ b/doc/source/install/install-base-obs.rst
+@@ -11,20 +11,51 @@ Prerequisites
+ 
+ Before you install and configure the Telemetry service, you must
+ configure a target to send metering data to. The recommended endpoint
+-is Gnocchi_. To enable Gnocchi, please see its install guide.
++is Gnocchi_.
+ 
+ .. _Gnocchi: http://gnocchi.xyz
+ .. include:: install-base-prereq-common.inc
+ 
++Install Gnocchi
++---------------
++
++#. Install the Gnocchi packages. Alternatively, Gnocchi can be install using
++   pip:
++
++   .. code-block:: console
++
++      # zypper install openstack-gnocchi-api openstack-gnocchi-metricd \
++        python-gnocchiclient
++
++   .. note::
++
++      Depending on your environment size, consider installing Gnocchi
++      separately as it makes extensive use of the cpu.
++
++.. include:: install-gnocchi.inc
++
++Finalize Gnocchi installation
++-----------------------------
++
++#. Start the Gnocchi services and configure them to start when the
++   system boots:
++
++   .. code-block:: console
++
++      # systemctl enable openstack-gnocchi-api.service \
++        openstack-gnocchi-metricd.service
++      # systemctl start openstack-gnocchi-api.service \
++        openstack-gnocchi-metricd.service
++
+ Install and configure components
+ --------------------------------
+ 
+-1. Install the packages:
++#. Install the packages:
+ 
+    .. code-block:: console
+ 
+       # zypper install openstack-ceilometer-agent-notification \
+-        openstack-ceilometer-agent-central python-ceilometerclient
++        openstack-ceilometer-agent-central
+ 
+ .. include:: install-base-config-common.inc
+ 
+diff --git a/doc/source/install/install-base-rdo.rst b/doc/source/install/install-base-rdo.rst
+index c15fb92..26f8b86 100644
+--- a/doc/source/install/install-base-rdo.rst
++++ b/doc/source/install/install-base-rdo.rst
+@@ -11,20 +11,51 @@ Prerequisites
+ 
+ Before you install and configure the Telemetry service, you must
+ configure a target to send metering data to. The recommended endpoint
+-is Gnocchi_. To enable Gnocchi, please see its install guide.
++is Gnocchi_.
+ 
+ .. _Gnocchi: http://gnocchi.xyz
+ .. include:: install-base-prereq-common.inc
+ 
++Install Gnocchi
++---------------
++
++#. Install the Gnocchi packages. Alternatively, Gnocchi can be install using
++   pip:
++
++   .. code-block:: console
++
++      # yum install openstack-gnocchi-api openstack-gnocchi-metricd \
++        python-gnocchiclient
++
++   .. note::
++
++      Depending on your environment size, consider installing Gnocchi
++      separately as it makes extensive use of the cpu.
++
++.. include:: install-gnocchi.inc
++
++Finalize Gnocchi installation
++-----------------------------
++
++#. Start the Gnocchi services and configure them to start when the
++   system boots:
++
++   .. code-block:: console
++
++      # systemctl enable openstack-gnocchi-api.service \
++        openstack-gnocchi-metricd.service
++      # systemctl start openstack-gnocchi-api.service \
++        openstack-gnocchi-metricd.service
++
+ Install and configure components
+ --------------------------------
+ 
+-1. Install the packages:
++#. Install the Ceilometer packages:
+ 
+    .. code-block:: console
+ 
+       # yum install openstack-ceilometer-notification \
+-        openstack-ceilometer-central python-ceilometerclient
++        openstack-ceilometer-central
+ 
+ .. include:: install-base-config-common.inc
+ 
+diff --git a/doc/source/install/install-base-ubuntu.rst b/doc/source/install/install-base-ubuntu.rst
+index 217fc21..fb8551e 100644
+--- a/doc/source/install/install-base-ubuntu.rst
++++ b/doc/source/install/install-base-ubuntu.rst
+@@ -11,20 +11,47 @@ Prerequisites
+ 
+ Before you install and configure the Telemetry service, you must
+ configure a target to send metering data to. The recommended endpoint
+-is Gnocchi_. To enable Gnocchi, please see its install guide.
++is Gnocchi_.
+ 
+ .. _Gnocchi: http://gnocchi.xyz
+ .. include:: install-base-prereq-common.inc
+ 
++Install Gnocchi
++---------------
++
++#. Install the Gnocchi packages. Alternatively, Gnocchi can be install using
++   pip:
++
++   .. code-block:: console
++
++      # apt-get install gnocchi-api gnocchi-metricd python-gnocchiclient
++
++   .. note::
++
++      Depending on your environment size, consider installing Gnocchi
++      separately as it makes extensive use of the cpu.
++
++.. include:: install-gnocchi.inc
++
++Finalize Gnocchi installation
++-----------------------------
++
++#. Restart the Gnocchi services:
++
++   .. code-block:: console
++
++      # service gnocchi-api restart
++      # service gnocchi-metricd restart
++
+ Install and configure components
+ --------------------------------
+ 
+-#. Install the packages:
++#. Install the ceilometer packages:
+ 
+    .. code-block:: console
+ 
+       # apt-get install ceilometer-agent-notification \
+-        ceilometer-agent-central python-ceilometerclient
++        ceilometer-agent-central
+ 
+ .. include:: install-base-config-common.inc
+ 
+diff --git a/doc/source/install/install-gnocchi.inc b/doc/source/install/install-gnocchi.inc
+new file mode 100644
+index 0000000..047cf5d
+--- /dev/null
++++ b/doc/source/install/install-gnocchi.inc
+@@ -0,0 +1,83 @@
++2. Create the database for Gnocchi's indexer:
++
++   * Use the database access client to connect to the database
++     server as the ``root`` user:
++
++     .. code-block:: console
++
++        $ mysql -u root -p
++
++   * Create the ``gnocchi`` database:
++
++     .. code-block:: console
++
++        CREATE DATABASE gnocchi;
++
++   * Grant proper access to the ``gnocchi`` database:
++
++     .. code-block:: console
++
++        GRANT ALL PRIVILEGES ON gnocchi.* TO 'gnocchi'@'localhost' \
++          IDENTIFIED BY 'GNOCCHI_DBPASS';
++        GRANT ALL PRIVILEGES ON gnocchi.* TO 'gnocchi'@'%' \
++          IDENTIFIED BY 'GNOCCHI_DBPASS';
++
++     Replace ``GNOCCHI_DBPASS`` with a suitable password.
++
++   * Exit the database access client.
++
++3. Edit the ``/etc/gnocchi/gnocchi.conf`` file and add Keystone options:
++
++   * In the ``[api]`` section, configure gnocchi to use keystone:
++
++     .. code-block:: ini
++
++        [api]
++        auth_mode = keystone
++
++   * In the ``[keystone_authtoken]`` section, configure keystone
++     authentication:
++
++     .. code-block:: ini
++
++        [keystone_authtoken]
++        ...
++        auth_type = password
++        auth_url = http://controller:5000/v3
++        project_domain_name = Default
++        user_domain_name = Default
++        project_name = service
++        username = gnocchi
++        password = GNOCCHI_PASS
++        interface = internalURL
++        region_name = RegionOne
++
++     Replace ``GNOCCHI_PASS`` with the password you chose for
++     the ``gnocchi`` user in the Identity service.
++
++   * In the ``[indexer]`` section, configure database access:
++
++     .. code-block:: ini
++
++        [indexer]
++        url = mysql+pymysql://gnocchi:GNOCCHI_DBPASS@controller/gnocchi
++
++     Replace ``GNOCCHI_DBPASS`` with the password you chose for Gnocchi's
++     indexer database.
++
++   * In the ``[storage]`` section, configure location to store metric data.
++     In this case, we will store it to the local file system. See Gnocchi
++     documenation for a list of more durable and performant drivers:
++
++     .. code-block:: ini
++
++        [storage]
++        coordination_url = redis://controller:6379
++        file_basepath = /var/lib/gnocchi
++        driver = file
++
++4. Initialize Gnocchi:
++
++   .. code-block:: console
++
++      gnocchi-upgrade
+-- 
+2.7.4
+

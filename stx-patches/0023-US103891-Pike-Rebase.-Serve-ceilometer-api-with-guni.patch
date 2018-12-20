@@ -1,0 +1,86 @@
+From ffbf2819120c9c3712acef33b0ac8c04db76ecd8 Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Wed, 15 Feb 2017 18:30:15 -0500
+Subject: [PATCH 23/91] US103891: Pike Rebase. Serve ceilometer api with
+ gunicorn.
+
+This squash includes the commits:
+
+1. US93501: Netwon Rebase. Serve ceilometer api with gunicorn
+   Ceilometer api is changed to launching by gunicorn. Add the ability to load the wsgi app with correct
+   pipeline_cfg_file and config_file configurations.
+
+2. CGTS-7304: Unable to retrieve ceilometer pipeline data
+
+   Get the constant software version from tsconfig.
+---
+ ceilometer/api/app.py            | 10 +++++++++-
+ ceilometer/api/ceilometer-api.py | 10 ++++++++++
+ ceilometer/cmd/api.py            |  4 ++--
+ 3 files changed, 21 insertions(+), 3 deletions(-)
+ create mode 100644 ceilometer/api/ceilometer-api.py
+
+diff --git a/ceilometer/api/app.py b/ceilometer/api/app.py
+index 76e0be8..4a67c74 100644
+--- a/ceilometer/api/app.py
++++ b/ceilometer/api/app.py
+@@ -89,7 +89,7 @@ global APPCONFIGS
+ APPCONFIGS = {}
+ 
+ 
+-def load_app(conf):
++def load_app(conf, args=None):
+     global APPCONFIGS
+ 
+     # Build the WSGI app
+@@ -103,6 +103,14 @@ def load_app(conf):
+     if not cfg_file:
+         raise cfg.ConfigFilesNotFoundError([conf.api_paste_config])
+ 
++    config = dict([(key, value) for key, value in args.iteritems()
++                   if key in conf and value is not None])
++    for key, value in config.iteritems():
++        if key == 'config_file':
++            conf.config_file = value
++        if key == 'pipeline_cfg_file':
++            conf.pipeline_cfg_file = value
++
+     configkey = str(uuid.uuid4())
+     APPCONFIGS[configkey] = conf
+ 
+diff --git a/ceilometer/api/ceilometer-api.py b/ceilometer/api/ceilometer-api.py
+new file mode 100644
+index 0000000..4a5f655
+--- /dev/null
++++ b/ceilometer/api/ceilometer-api.py
+@@ -0,0 +1,10 @@
++from ceilometer.cmd import api as build_wsgi_app
++import sys
++from tsconfig.tsconfig import SW_VERSION
++
++sys.argv = sys.argv[:1]
++args = {
++    'config_file': 'etc/ceilometer/ceilometer.conf',
++    'pipeline_cfg_file':
++    '/opt/cgcs/ceilometer/' + str(SW_VERSION) + '/pipeline.yaml', }
++application = build_wsgi_app.build_wsgi_app(args)
+diff --git a/ceilometer/cmd/api.py b/ceilometer/cmd/api.py
+index 7591fb4..58c1db4 100644
+--- a/ceilometer/cmd/api.py
++++ b/ceilometer/cmd/api.py
+@@ -25,10 +25,10 @@ from ceilometer import service
+ LOG = log.getLogger(__name__)
+ 
+ 
+-def build_wsgi_app(argv=None):
++def build_wsgi_app(argv=None, args=None):
+     conf = service.prepare_service(argv=argv)
+     conf.register_opts(oslo_config_glue.service_opts)
+     if conf.log_options:
+         LOG.debug('Full set of CONF:')
+         conf.log_opt_values(LOG, logging.DEBUG)
+-    return app.load_app(conf)
++    return app.load_app(conf, args)
+-- 
+2.7.4
+

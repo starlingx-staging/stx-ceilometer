@@ -1,0 +1,132 @@
+From b76570f3db82e845b8790c410894c67add0b5dce Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Tue, 26 Jul 2016 16:31:50 -0400
+Subject: [PATCH 16/91] US103891: Pike Rebase. US84125-Support ceilometer data
+ migrations from 15.12 to 16.00
+
+  The resource table on 15.12 already has the ix_resource_metadata_hash index created.
+  Fail to upgrade because it tries to add the index again. Fix it by swapping reduce_uuid_data_types.py
+  with add_resource_metadatahash_index.py to correct the order.
+---
+ .../043_add_resource_metadatahash_index.py         | 24 ++++++++++++++++++++++
+ .../versions/043_reduce_uuid_data_types.py         | 19 -----------------
+ .../045_add_resource_metadatahash_index.py         | 21 -------------------
+ .../versions/045_reduce_uuid_data_types.py         | 21 +++++++++++++++++++
+ 4 files changed, 45 insertions(+), 40 deletions(-)
+ create mode 100644 ceilometer/storage/sqlalchemy/migrate_repo/versions/043_add_resource_metadatahash_index.py
+ delete mode 100644 ceilometer/storage/sqlalchemy/migrate_repo/versions/043_reduce_uuid_data_types.py
+ delete mode 100644 ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_resource_metadatahash_index.py
+ create mode 100644 ceilometer/storage/sqlalchemy/migrate_repo/versions/045_reduce_uuid_data_types.py
+
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/043_add_resource_metadatahash_index.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/043_add_resource_metadatahash_index.py
+new file mode 100644
+index 0000000..c8ddc95
+--- /dev/null
++++ b/ceilometer/storage/sqlalchemy/migrate_repo/versions/043_add_resource_metadatahash_index.py
+@@ -0,0 +1,24 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++# Perviously was 045_add_resource_metadatahash_index
++# Swapped due to conflict issue during ceilometer db upgrade
++
++import sqlalchemy as sa
++
++
++# Add index on metadata_hash column of resource
++def upgrade(migrate_engine):
++    meta = sa.MetaData(bind=migrate_engine)
++    resource = sa.Table('resource', meta, autoload=True)
++    index = sa.Index('ix_resource_metadata_hash', resource.c.metadata_hash)
++    index.create(bind=migrate_engine)
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/043_reduce_uuid_data_types.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/043_reduce_uuid_data_types.py
+deleted file mode 100644
+index 03a5525..0000000
+--- a/ceilometer/storage/sqlalchemy/migrate_repo/versions/043_reduce_uuid_data_types.py
++++ /dev/null
+@@ -1,19 +0,0 @@
+-# Licensed under the Apache License, Version 2.0 (the "License"); you may
+-# not use this file except in compliance with the License. You may obtain
+-# a copy of the License at
+-#
+-#      http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing, software
+-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+-# License for the specific language governing permissions and limitations
+-# under the License.
+-
+-
+-def upgrade(migrate_engine):
+-    # NOTE(gordc): this is a noop script to handle bug1468916
+-    # previous lowering of id length will fail if db contains data longer.
+-    # this skips migration for those failing. the next script will resize
+-    # if this original migration passed.
+-    pass
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_resource_metadatahash_index.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_resource_metadatahash_index.py
+deleted file mode 100644
+index ac59595..0000000
+--- a/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_resource_metadatahash_index.py
++++ /dev/null
+@@ -1,21 +0,0 @@
+-# Licensed under the Apache License, Version 2.0 (the "License"); you may
+-# not use this file except in compliance with the License. You may obtain
+-# a copy of the License at
+-#
+-#      http://www.apache.org/licenses/LICENSE-2.0
+-#
+-# Unless required by applicable law or agreed to in writing, software
+-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+-# License for the specific language governing permissions and limitations
+-# under the License.
+-
+-import sqlalchemy as sa
+-
+-
+-# Add index on metadata_hash column of resource
+-def upgrade(migrate_engine):
+-    meta = sa.MetaData(bind=migrate_engine)
+-    resource = sa.Table('resource', meta, autoload=True)
+-    index = sa.Index('ix_resource_metadata_hash', resource.c.metadata_hash)
+-    index.create(bind=migrate_engine)
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_reduce_uuid_data_types.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_reduce_uuid_data_types.py
+new file mode 100644
+index 0000000..0244416
+--- /dev/null
++++ b/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_reduce_uuid_data_types.py
+@@ -0,0 +1,21 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++# Perviously was 043_reduce_uuid_data_types
++# Swapped due to conflict issue during ceilometer db upgrade
++
++def upgrade(migrate_engine):
++    # NOTE(gordc): this is a noop script to handle bug1468916
++    # previous lowering of id length will fail if db contains data longer.
++    # this skips migration for those failing. the next script will resize
++    # if this original migration passed.
++    pass
+-- 
+2.7.4
+

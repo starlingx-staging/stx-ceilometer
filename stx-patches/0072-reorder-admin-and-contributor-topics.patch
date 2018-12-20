@@ -1,0 +1,122 @@
+From abad1ac4b79cc38a50b26b8e00e1657828013211 Mon Sep 17 00:00:00 2001
+From: gord chung <gord@live.ca>
+Date: Thu, 7 Dec 2017 21:19:20 +0000
+Subject: [PATCH 72/91] reorder admin and contributor topics
+
+- create logical sections
+- move troubleshooting-guide to bottom as it's basically useless
+(but we should add to it)
+- i've no idea what gmr is so i just put it where it is.
+
+Change-Id: I647a84e2d29f00a8c64c42914939d60cc8aa6ebe
+(cherry picked from commit 435a00707f605c5b8bf5bc20235ed538c87ac6a8)
+---
+ doc/source/admin/index.rst       | 27 ++++++++++++++++++++++++---
+ doc/source/contributor/index.rst | 36 +++++++++++++++++++++++++++---------
+ 2 files changed, 51 insertions(+), 12 deletions(-)
+
+diff --git a/doc/source/admin/index.rst b/doc/source/admin/index.rst
+index da6c1cb..be17355 100644
+--- a/doc/source/admin/index.rst
++++ b/doc/source/admin/index.rst
+@@ -4,14 +4,35 @@
+  Administrator Guide
+ =====================
+ 
++
++Overview
++========
+ .. toctree::
+    :maxdepth: 2
+ 
+    telemetry-system-architecture
+-   telemetry-measurements
+-   telemetry-troubleshooting-guide
+-   telemetry-data-pipelines
++
++Configuration
++=============
++.. toctree::
++   :maxdepth: 2
++
+    telemetry-data-collection
++   telemetry-data-pipelines
+    telemetry-data-retrieval
+    telemetry-best-practices
++
++Data Types
++==========
++.. toctree::
++   :maxdepth: 2
++
++   telemetry-measurements
+    telemetry-events
++
++Management
++==========
++.. toctree::
++   :maxdepth: 2
++
++   telemetry-troubleshooting-guide
+diff --git a/doc/source/contributor/index.rst b/doc/source/contributor/index.rst
+index 1d57ec1..0e640e0 100644
+--- a/doc/source/contributor/index.rst
++++ b/doc/source/contributor/index.rst
+@@ -1,7 +1,8 @@
+-Contribution Guidelines
+-=======================
++=================
++Contributor Guide
++=================
+ 
+-In the Contributions Guide, you will find documented policies for
++In the Contributor Guide, you will find documented policies for
+ developing with Ceilometer. This includes the processes we use for
+ bugs, contributor onboarding, core reviewer memberships, and other
+ procedural items.
+@@ -17,19 +18,36 @@ contributing to Ceilometer, please follow the workflow found here_.
+ :Code Hosting: https://git.openstack.org/cgit/openstack/ceilometer/
+ :Code Review: https://review.openstack.org/#/q/status:open+project:openstack/ceilometer,n,z
+ 
+-
+-Developer reference
+--------------------
+-
++Overview
++========
+ .. toctree::
+    :maxdepth: 2
+ 
+    overview
+    architecture
++
++Data Types
++==========
++.. toctree::
++   :maxdepth: 2
++
+    measurements
+    events
+-   plugins
+-   new_resource_types
++
++Getting Started
++===============
++.. toctree::
++   :maxdepth: 2
++
+    devstack
+    testing
+    gmr
++
++
++Development
++===========
++.. toctree::
++   :maxdepth: 2
++
++   plugins
++   new_resource_types
+-- 
+2.7.4
+

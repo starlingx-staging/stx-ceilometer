@@ -1,0 +1,46 @@
+From a898c5e42794c96930632d9d5470fb4afe42c888 Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Fri, 6 Oct 2017 12:56:52 -0400
+Subject: [PATCH 26/91] US103891: Pike Rebase.CGTS-7637: meter
+ 'cpu_util'/'vcpu_util' may be more than 100
+
+---
+ ceilometer/pipeline/data/pipeline.yaml | 1 +
+ etc/ceilometer/controller.yaml         | 2 ++
+ 2 files changed, 3 insertions(+)
+
+diff --git a/ceilometer/pipeline/data/pipeline.yaml b/ceilometer/pipeline/data/pipeline.yaml
+index 657c95e..bb259b7 100644
+--- a/ceilometer/pipeline/data/pipeline.yaml
++++ b/ceilometer/pipeline/data/pipeline.yaml
+@@ -65,6 +65,7 @@ sinks:
+                     name: "vcpu_util"
+                     unit: "%"
+                     type: "gauge"
++                    max: 100
+                     scale: "100.0 / (10**9 * (resource_metadata.vcpu_number or 1))"
+       publishers:
+           - gnocchi://
+diff --git a/etc/ceilometer/controller.yaml b/etc/ceilometer/controller.yaml
+index 2050817..64fffd2 100644
+--- a/etc/ceilometer/controller.yaml
++++ b/etc/ceilometer/controller.yaml
+@@ -47,6 +47,7 @@ sinks:
+                     name: "cpu_util"
+                     unit: "%"
+                     type: "gauge"
++                    max: 100
+                     scale: "100.0 / (10**9 * (resource_metadata.cpu_number or 1))"
+       publishers:
+           - gnocchi://
+@@ -58,6 +59,7 @@ sinks:
+                     name: "vcpu_util"
+                     unit: "%"
+                     type: "gauge"
++                    max: 100
+                     scale: "100.0 / (10**9 * (resource_metadata.vcpu_number or 1))"
+       publishers:
+           - gnocchi://
+-- 
+2.7.4
+

@@ -1,0 +1,474 @@
+From 95ec565963ebbac177d110ffcd0960609218d7b6 Mon Sep 17 00:00:00 2001
+From: gord chung <gord@live.ca>
+Date: Wed, 6 Dec 2017 18:35:46 +0000
+Subject: [PATCH 68/91] clean up non-install parts of contributor docs
+
+- remove specific comments about preferring notifications v. polling
+just say, polling can add load
+- remove kafka publisher reference
+- remove database publisher reference
+- move key links (wiki, launchpad, ml, etc...) to index
+- put all meter details in one area
+- clean up testing
+
+Change-Id: I1993a9945334ffe631f2ddb3dcd0316d0e71f258
+(cherry picked from commit 48751822dd1fad3c652cd1a5cc9a60c6a2a15fb8)
+---
+ doc/source/admin/telemetry-data-collection.rst |   2 +
+ doc/source/contributor/architecture.rst        |  24 +++---
+ doc/source/contributor/contributing.rst        |  33 -------
+ doc/source/contributor/index.rst               |  16 +++-
+ doc/source/contributor/measurements.rst        |  81 ++++++++++++++++-
+ doc/source/contributor/new_meters.rst          | 115 -------------------------
+ doc/source/contributor/plugins.rst             |   2 +-
+ doc/source/contributor/testing.rst             |  57 +++---------
+ 8 files changed, 117 insertions(+), 213 deletions(-)
+ delete mode 100644 doc/source/contributor/contributing.rst
+ delete mode 100644 doc/source/contributor/new_meters.rst
+
+diff --git a/doc/source/admin/telemetry-data-collection.rst b/doc/source/admin/telemetry-data-collection.rst
+index 2306fcb..03d69bf 100644
+--- a/doc/source/admin/telemetry-data-collection.rst
++++ b/doc/source/admin/telemetry-data-collection.rst
+@@ -199,6 +199,8 @@ compute service, see `Telemetry services
+ <https://docs.openstack.org/project-install-guide/telemetry/ocata/install-compute-ubuntu.html>`__ in the
+ Installation Tutorials and Guides.
+ 
++.. _meter_definitions:
++
+ Meter definitions
+ -----------------
+ 
+diff --git a/doc/source/contributor/architecture.rst b/doc/source/contributor/architecture.rst
+index 496e630..4090c80 100644
+--- a/doc/source/contributor/architecture.rst
++++ b/doc/source/contributor/architecture.rst
+@@ -60,15 +60,11 @@ How is data collected?
+ The Ceilometer project created 2 methods to collect data:
+ 
+ 1. :term:`Notification agent` which takes messages generated on the
+-   notification bus and transforms them into Ceilometer samples or events. This
+-   is **the preferred method** of data collection. If you are working on some
+-   OpenStack related project and are using the Oslo library, you are kindly
+-   invited to come and talk to one of the project members to learn how you
+-   could quickly add instrumentation for your project.
+-2. :term:`Polling agents`, which is the less preferred method, will poll
+-   some API or other tool to collect information at a regular interval.
+-   The polling approach is less preferred due to the load it can impose
+-   on the API services.
++   notification bus and transforms them into Ceilometer samples or events.
++2. :term:`Polling agent`, will poll some API or other tool to collect
++   information at a regular interval. The polling approach may impose
++   significant on the API services so should only be used on optimised
++   endpoints.
+ 
+ The first method is supported by the ceilometer-notification agent, which
+ monitors the message queues for notifications. Polling agents can be configured
+@@ -174,6 +170,11 @@ of data and if combined with historical or temporal context, can be used to
+ derive even more data. Ceilometer offers various transformers which can be used
+ to manipulate data in the pipeline.
+ 
++.. note::
++
++   The equivalent functionality can be handled more stably by storage
++   drivers such as Gnocchi.
++
+ Publishing the data
+ -------------------
+ 
+@@ -191,10 +192,7 @@ Currently, processed data can be published using 7 different transports:
+    which can be consumed by an external system;
+ 3. udp, which publishes samples using UDP packets;
+ 4. http, which targets a REST interface;
+-5. kafka, which publishes data to a Kafka message queue to be consumed by any system
+-   that supports Kafka.
+-6. file, which publishes samples to a file with specified name and location;
+-7. database, which stores samples to the legacy ceilometer database system.
++5. file, which publishes samples to a file with specified name and location;
+ 
+ 
+ Storing/Accessing the data
+diff --git a/doc/source/contributor/contributing.rst b/doc/source/contributor/contributing.rst
+deleted file mode 100644
+index 03a9500..0000000
+--- a/doc/source/contributor/contributing.rst
++++ /dev/null
+@@ -1,33 +0,0 @@
+-..
+-      Licensed under the Apache License, Version 2.0 (the "License"); you may
+-      not use this file except in compliance with the License. You may obtain
+-      a copy of the License at
+-
+-          http://www.apache.org/licenses/LICENSE-2.0
+-
+-      Unless required by applicable law or agreed to in writing, software
+-      distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+-      WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+-      License for the specific language governing permissions and limitations
+-      under the License.
+-
+-.. _contributing:
+-
+-============================
+- Contributing to Ceilometer
+-============================
+-
+-Ceilometer follows the same workflow as other OpenStack projects. To start
+-contributing to Ceilometer, please follow the workflow found here_.
+-
+-.. _here: https://wiki.openstack.org/wiki/Gerrit_Workflow
+-
+-
+-Project Hosting Details
+-=======================
+-
+-:Bug tracker: https://launchpad.net/ceilometer
+-:Mailing list: http://lists.openstack.org/cgi-bin/mailman/listinfo/openstack-dev (prefix subjects with ``[Ceilometer]`` for faster responses)
+-:Wiki: https://wiki.openstack.org/wiki/Ceilometer
+-:Code Hosting: https://git.openstack.org/cgit/openstack/ceilometer/
+-:Code Review: https://review.openstack.org/#/q/status:open+project:openstack/ceilometer,n,z
+diff --git a/doc/source/contributor/index.rst b/doc/source/contributor/index.rst
+index a5e28d1..78f78c3 100644
+--- a/doc/source/contributor/index.rst
++++ b/doc/source/contributor/index.rst
+@@ -2,10 +2,22 @@ Contribution Guidelines
+ =======================
+ 
+ In the Contributions Guide, you will find documented policies for
+-developing with Ceiloemter. This includes the processes we use for
++developing with Ceilometer. This includes the processes we use for
+ bugs, contributor onboarding, core reviewer memberships, and other
+ procedural items.
+ 
++Ceilometer follows the same workflow as other OpenStack projects. To start
++contributing to Ceilometer, please follow the workflow found here_.
++
++.. _here: https://wiki.openstack.org/wiki/Gerrit_Workflow
++
++:Bug tracker: https://launchpad.net/ceilometer
++:Mailing list: http://lists.openstack.org/cgi-bin/mailman/listinfo/openstack-dev (prefix subjects with ``[Ceilometer]`` for faster responses)
++:Wiki: https://wiki.openstack.org/wiki/Ceilometer
++:Code Hosting: https://git.openstack.org/cgit/openstack/ceilometer/
++:Code Review: https://review.openstack.org/#/q/status:open+project:openstack/ceilometer,n,z
++
++
+ Developer reference
+ -------------------
+ 
+@@ -16,11 +28,9 @@ Developer reference
+    architecture
+    measurements
+    events
+-   contributing
+    install/index
+    configuration
+    plugins
+-   new_meters
+    new_resource_types
+    testing
+    gmr
+diff --git a/doc/source/contributor/measurements.rst b/doc/source/contributor/measurements.rst
+index acef3b6..4713514 100644
+--- a/doc/source/contributor/measurements.rst
++++ b/doc/source/contributor/measurements.rst
+@@ -27,9 +27,82 @@ For the list of existing meters see the tables under the
+ 
+ .. _Measurements page: https://docs.openstack.org/admin-guide/telemetry-measurements.html
+ 
+-Adding new meters
+-=================
++New measurements
++================
+ 
+-If you would like to add new meters please check the
+-:ref:`add_new_meters` page under in the Contributing
++Ceilometer is designed to collect measurements from OpenStack services and
++from other external components. If you would like to add new meters to the
++currently existing ones, you need to follow the guidelines given in this
+ section.
++
++.. _meter_types:
++
++Types
++-----
++
++Three type of meters are defined in Ceilometer:
++
++.. index::
++   double: meter; cumulative
++   double: meter; gauge
++   double: meter; delta
++
++==========  ==============================================================================
++Type        Definition
++==========  ==============================================================================
++Cumulative  Increasing over time (instance hours)
++Gauge       Discrete items (floating IPs, image uploads) and fluctuating values (disk I/O)
++Delta       Changing over time (bandwidth)
++==========  ==============================================================================
++
++When you're about to add a new meter choose one type from the above list, which
++is applicable.
++
++Units
++-----
++
++1. Whenever a volume is to be measured, SI approved units and their
++   approved symbols or abbreviations should be used. Information units
++   should be expressed in bits ('b') or bytes ('B').
++2. For a given meter, the units should NEVER, EVER be changed.
++3. When the measurement does not represent a volume, the unit
++   description should always describe WHAT is measured (ie: apples,
++   disk, routers, floating IPs, etc.).
++4. When creating a new meter, if another meter exists measuring
++   something similar, the same units and precision should be used.
++5. Meters and samples should always document their units in Ceilometer (API
++   and Documentation) and new sampling code should not be merged without the
++   appropriate documentation.
++
++============  ========  ==============  =======================
++Dimension     Unit      Abbreviations   Note
++============  ========  ==============  =======================
++None          N/A                       Dimension-less variable
++Volume        byte      B
++Time          seconds   s
++============  ========  ==============  =======================
++
++Naming convention
++-----------------
++
++If you plan on adding meters, please follow the convention below:
++
++1. Always use '.' as separator and go from least to most discriminant word.
++   For example, do not use ephemeral_disk_size but disk.ephemeral.size
++
++2. When a part of the name is a variable, it should always be at the end and start with a ':'.
++   For example, do not use <type>.image but image:<type>, where type is your variable name.
++
++3. If you have any hesitation, come and ask in #openstack-telemetry
++
++Meter definitions
++-----------------
++Meters definitions by default, are stored in separate configuration
++file, called :file:`ceilometer/data/meters.d/meters.yaml`. This is essentially
++a replacement for prior approach of writing notification handlers to consume
++specific topics.
++
++A detailed description of how to use meter definition is illustrated in
++the `admin_guide`_.
++
++.. _admin_guide: https://docs.openstack.org/ceilometer/latest/admin/telemetry-data-collection.html#meter-definitions
+diff --git a/doc/source/contributor/new_meters.rst b/doc/source/contributor/new_meters.rst
+deleted file mode 100644
+index fbe375f..0000000
+--- a/doc/source/contributor/new_meters.rst
++++ /dev/null
+@@ -1,115 +0,0 @@
+-..
+-      Copyright 2012 New Dream Network (DreamHost)
+-
+-      Licensed under the Apache License, Version 2.0 (the "License"); you may
+-      not use this file except in compliance with the License. You may obtain
+-      a copy of the License at
+-
+-          http://www.apache.org/licenses/LICENSE-2.0
+-
+-      Unless required by applicable law or agreed to in writing, software
+-      distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+-      WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+-      License for the specific language governing permissions and limitations
+-      under the License.
+-
+-.. _add_new_meters:
+-
+-==================
+- New measurements
+-==================
+-
+-Ceilometer is designed to collect measurements from OpenStack services and
+-from other external components. If you would like to add new meters to the
+-currently existing ones, you need to follow the guidelines given in this
+-section.
+-
+-.. _meter_types:
+-
+-Types
+-=====
+-
+-Three type of meters are defined in Ceilometer:
+-
+-.. index::
+-   double: meter; cumulative
+-   double: meter; gauge
+-   double: meter; delta
+-
+-==========  ==============================================================================
+-Type        Definition
+-==========  ==============================================================================
+-Cumulative  Increasing over time (instance hours)
+-Gauge       Discrete items (floating IPs, image uploads) and fluctuating values (disk I/O)
+-Delta       Changing over time (bandwidth)
+-==========  ==============================================================================
+-
+-When you're about to add a new meter choose one type from the above list, which
+-is applicable.
+-
+-
+-Units
+-=====
+-
+-1. Whenever a volume is to be measured, SI approved units and their
+-   approved symbols or abbreviations should be used. Information units
+-   should be expressed in bits ('b') or bytes ('B').
+-2. For a given meter, the units should NEVER, EVER be changed.
+-3. When the measurement does not represent a volume, the unit
+-   description should always describe WHAT is measured (ie: apples,
+-   disk, routers, floating IPs, etc.).
+-4. When creating a new meter, if another meter exists measuring
+-   something similar, the same units and precision should be used.
+-5. Meters and samples should always document their units in Ceilometer (API
+-   and Documentation) and new sampling code should not be merged without the
+-   appropriate documentation.
+-
+-============  ========  ==============  =======================
+-Dimension     Unit      Abbreviations   Note
+-============  ========  ==============  =======================
+-None          N/A                       Dimension-less variable
+-Volume        byte      B
+-Time          seconds   s
+-============  ========  ==============  =======================
+-
+-
+-Meters
+-======
+-
+-Naming convention
+------------------
+-
+-If you plan on adding meters, please follow the convention below:
+-
+-1. Always use '.' as separator and go from least to most discriminant word.
+-   For example, do not use ephemeral_disk_size but disk.ephemeral.size
+-
+-2. When a part of the name is a variable, it should always be at the end and start with a ':'.
+-   For example, do not use <type>.image but image:<type>, where type is your variable name.
+-
+-3. If you have any hesitation, come and ask in #openstack-telemetry
+-
+-Meter definitions
+------------------
+-Meters definitions by default, are stored in separate configuration
+-file, called :file:`ceilometer/data/meters.d/meters.yaml`. This is essentially
+-a replacement for prior approach of writing notification handlers to consume
+-specific topics.
+-
+-A detailed description of how to use meter definition is illustrated in
+-the `admin_guide`_.
+-
+-.. _admin_guide: https://docs.openstack.org/admin-guide/telemetry-data-collection.html#meter-definitions
+-
+-Non-metric meters and events
+-----------------------------
+-
+-Ceilometer supports collecting notifications as events. It is highly
+-recommended to use events for capturing if something happened in the system
+-or not as opposed to defining meters of which volume will be constantly '1'.
+-Events enable better representation and querying of metadata rather than
+-statistical aggregations required for Samples. When the event support is
+-turned on for Ceilometer, event type meters are collected into the event
+-database too, which can lead to the duplication of a huge amount of data.
+-
+-In order to learn more about events see the :ref:`events` section.
+diff --git a/doc/source/contributor/plugins.rst b/doc/source/contributor/plugins.rst
+index 76b3d73..558ad52 100644
+--- a/doc/source/contributor/plugins.rst
++++ b/doc/source/contributor/plugins.rst
+@@ -63,7 +63,7 @@ Notifications mechanism uses plugins as well, for instance
+ which is defined in the ``ceilometer/telemetry/notifications`` folder, Though
+ in most cases, this is not needed. A meter definition can be directly added
+ to :file:`ceilometer/data/meters.d/meters.yaml` to match the event type. For
+-more information, see the :ref:`add_new_meters` page.
++more information, see the :ref:`meter_definitions` page.
+ 
+ We are using these two existing plugins as examples as the first one provides
+ an example of how to interact when you need to retrieve information from an
+diff --git a/doc/source/contributor/testing.rst b/doc/source/contributor/testing.rst
+index a87cd38..c38fc32 100644
+--- a/doc/source/contributor/testing.rst
++++ b/doc/source/contributor/testing.rst
+@@ -24,59 +24,28 @@ run through tox_.
+ 
+    $ sudo pip install tox
+ 
+-2. On Ubuntu install ``mongodb`` and ``libmysqlclient-dev`` packages::
+-
+-   $ sudo apt-get install mongodb
+-   $ sudo apt-get install libmysqlclient-dev
+-
+-   For Fedora20 there is no ``libmysqlclient-dev`` package, so you’ll need
+-   to install ``mariadb-devel.x86-64`` (or ``mariadb-devel.i386``) instead::
+-
+-   $ sudo yum install mongodb
+-   $ sudo yum install mariadb-devel.x86_64
+-
+-3. Install the test dependencies::
+-
+-   $ sudo pip install -r /opt/stack/ceilometer/test-requirements.txt
+-
+-4. Run the unit and code-style tests::
++2. Run the unit and code-style tests::
+ 
+    $ cd /opt/stack/ceilometer
+    $ tox -e py27,pep8
+ 
+-   As tox is a wrapper around testr, it also accepts the same flags as testr.
+-   See the `testr documentation`_ for details about these additional flags.
++As tox is a wrapper around testr, it also accepts the same flags as testr.
++See the `testr documentation`_ for details about these additional flags.
+ 
+ .. _testr documentation: https://testrepository.readthedocs.org/en/latest/MANUAL.html
+ 
+-   Use a double hyphen to pass options to testr. For example, to run only tests under tests/api/v2::
+-
+-      $ tox -e py27 -- api.v2
+-
+-   To debug tests (ie. break into pdb debugger), you can use ''debug'' tox
+-   environment. Here's an example, passing the name of a test since you'll
+-   normally only want to run the test that hits your breakpoint::
+-
+-       $ tox -e debug ceilometer.tests.test_bin
+-
+-   For reference, the ``debug`` tox environment implements the instructions
+-   here: https://wiki.openstack.org/wiki/Testr#Debugging_.28pdb.29_Tests
+-
+-5. There is a growing suite of tests which use a tool called `gabbi`_ to
+-   test and validate the behavior of the Ceilometer API. These tests are run
+-   when using the usual ``py27`` tox target but if desired they can be run by
+-   themselves::
+-
+-   $ tox -e gabbi
++Use a double hyphen to pass options to testr. For example, to run only tests
++under tests/unit/image::
+ 
+-   The YAML files used to drive the gabbi tests can be found in
+-   ``ceilometer/tests/gabbi/gabbits``. If you are adding to or adjusting the
+-   API you should consider adding tests here.
++  $ tox -e py27 -- image
+ 
+-.. _gabbi: https://gabbi.readthedocs.org/
++To debug tests (ie. break into pdb debugger), you can use ''debug'' tox
++environment. Here's an example, passing the name of a test since you'll
++normally only want to run the test that hits your breakpoint::
+ 
+-.. seealso::
++  $ tox -e debug ceilometer.tests.unit.test_bin
+ 
+-   * tox_
++For reference, the ``debug`` tox environment implements the instructions
++here: https://wiki.openstack.org/wiki/Testr#Debugging_.28pdb.29_Tests
+ 
+-.. _tox: http://tox.testrun.org/latest/
++.. _tox: https://tox.readthedocs.io/en/latest/
+-- 
+2.7.4
+

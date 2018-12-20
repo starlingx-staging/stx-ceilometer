@@ -1,0 +1,31 @@
+From 76032f7b6da578282259320fd8a7351c609a0561 Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Thu, 12 Jan 2017 10:04:00 -0500
+Subject: [PATCH 11/91] US103891: Pike Rebase. Port change default API limit
+
+Original commit:
+    98eb7009aa21091ca05427b5db6f250dc7f3e1d2
+
+Change default API limit to 500 from 100
+
+This should actually be done using packstack.
+---
+ ceilometer/api/app.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/ceilometer/api/app.py b/ceilometer/api/app.py
+index 8a42270..76e0be8 100644
+--- a/ceilometer/api/app.py
++++ b/ceilometer/api/app.py
+@@ -44,7 +44,7 @@ OPTS = [
+ API_OPTS = [
+     cfg.IntOpt('default_api_return_limit',
+                min=1,
+-               default=100,
++               default=500,
+                help='Default maximum number of items returned by API request.'
+                ),
+ ]
+-- 
+2.7.4
+

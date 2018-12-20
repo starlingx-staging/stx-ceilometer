@@ -1,0 +1,51 @@
+From 02fea285e9c55e334d228e5db03ee348b5857d88 Mon Sep 17 00:00:00 2001
+From: Nakul Dahiwade <nakul.dahiwade@gmail.com>
+Date: Fri, 6 Apr 2018 11:16:07 -0700
+Subject: [PATCH 89/91] Revert "Copyright_removal"
+
+This reverts commit 1b16e7f1f670f1ad3aa692d13f51cca190b5c534.
+---
+ ceilometer/compute/virt/libvirt/inspector.py | 7 +++++++
+ ceilometer/tests/unit/test_middleware.py     | 8 +++++++-
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/ceilometer/compute/virt/libvirt/inspector.py b/ceilometer/compute/virt/libvirt/inspector.py
+index cdd1068..0b21b6c 100755
+--- a/ceilometer/compute/virt/libvirt/inspector.py
++++ b/ceilometer/compute/virt/libvirt/inspector.py
+@@ -13,6 +13,13 @@
+ # License for the specific language governing permissions and limitations
+ # under the License.
+ """Implementation of Inspector abstraction for libvirt."""
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ from lxml import etree
+ from oslo_log import log as logging
+diff --git a/ceilometer/tests/unit/test_middleware.py b/ceilometer/tests/unit/test_middleware.py
+index cd14c07..855a0f7 100644
+--- a/ceilometer/tests/unit/test_middleware.py
++++ b/ceilometer/tests/unit/test_middleware.py
+@@ -12,7 +12,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
+-
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ import mock
+ 
+ from ceilometer import middleware
+-- 
+2.7.4
+

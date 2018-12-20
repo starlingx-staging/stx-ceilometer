@@ -1,0 +1,857 @@
+From 7129bc6634d205e7d06d3258214270bedd67172d Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Thu, 12 Jan 2017 16:15:03 -0500
+Subject: [PATCH 18/91] US103891: Pike Rebase. Ceilometer Performance and
+ Scalability Improvements Part 2
+
+This squash includes the following commits:
+
+1. US82783 - Ceilometer Performance and Scalability Improvements Part 2
+commit: 70a5b19124a
+
+Get resource data in batch. With previous method, it takes close to a second to get
+data for each resource id. In a big lab, a meter can result in hundreds of resource
+id matches. This change should speed up meter-based stats reports considerably.
+
+Tests performed: upgrade tests (with and without new stored proc & type) + sanity test.
+
+2. US82783 - Ceilometer Performance and Scalability Improvements Part 2
+commit: 37162a07ab5
+
+- Downgrade the log level of high frequency non-essential logs to debug to reduce I/O.
+  In a large lab, ceilometer-api log is flooded with log entries related to configurations
+  and one .gz log is generated every 10 minutes.
+
+- Correct log destination for initial startup of ceilometer api, collector and notification
+  agent via packstack.
+
+- Eliminate unnecessary exception messages in log when resource is not found.
+
+3. US82783 - Ceilometer Performance and Scalability Improvements Part 2
+commit: 2772a5449ca
+
+Update stored proc to return 1 item for each matching resource id. The IN/= ANY
+clause can return duplicates in cases such as shared resources and where
+metadata values are irrelevant for the stats report.
+
+4. US82783 ceilometer performance and scalability improvements, TA153329 one-shot meter-based stats computation - server, part 1, without metadata filter
+commit: 93e4ecefca6
+
+5. US82783 ceilometer performance and scalability improvements, TA153329 one-shot meter-based stats computation - server
+Part II, add metadata filtering
+commit: 453bab42a18
+
+6. US82783 TA15331 One-shot daily usage stats computation -server use in clause for one shot meter aggregate
+commit: 5eb0435c5af
+
+7. skip query and return no result if meter is not found in postgres db
+commit: d9aa5e5e95d
+
+8. US82783 - Add filtering capability to faster query in get meters
+commit: ced06bc34d1
+
+9. CGTS-5206 Regression: ceilometer sample-list --meter does not narrow down results
+commit: 56e034d4163
+
+10.CGTS-6676: Resource usage report contains usage data from the next day.
+
+   Root cause is incorrect ceilometer statistics query with period spefified.
+   SQL query "cast as int" will round the number which is not correct. Use "floor"
+   to get largest integer not greater than argument.
+---
+ ceilometer/api/controllers/v2/resources.py         |  41 +-
+ ceilometer/api/controllers/v2/statistics.py        |  38 +-
+ ceilometer/api/controllers/v2/utils.py             |   3 +
+ ceilometer/pipeline.py                             |   8 +-
+ ceilometer/publisher/messaging.py                  |   4 +-
+ ceilometer/storage/impl_sqlalchemy.py              | 448 +++++++++++++++++++--
+ .../045_add_unique_constraint_and_stored_proc.py   |  54 +++
+ .../unit/publisher/test_messaging_publisher.py     |   4 +-
+ 8 files changed, 517 insertions(+), 83 deletions(-)
+
+diff --git a/ceilometer/api/controllers/v2/resources.py b/ceilometer/api/controllers/v2/resources.py
+index a98cc23..e9a97d2 100644
+--- a/ceilometer/api/controllers/v2/resources.py
++++ b/ceilometer/api/controllers/v2/resources.py
+@@ -25,6 +25,7 @@
+ # of an applicable Wind River license agreement.
+ #
+ 
++import ast
+ import datetime
+ from six.moves import urllib
+ 
+@@ -153,13 +154,33 @@ class ResourcesController(rest.RestController):
+         rbac.enforce('get_resources', pecan.request)
+ 
+         q = q or []
+-        limit = utils.enforce_limit(limit)
+-        kwargs = utils.query_to_kwargs(
+-            q, pecan.request.storage_conn.get_resources, ['limit'])
+-        resources = [
+-            Resource.from_db_and_links(r,
+-                                       self._resource_links(r.resource_id,
+-                                                            meter_links))
+-            for r in pecan.request.storage_conn.get_resources(limit=limit,
+-                                                              **kwargs)]
+-        return resources
++        r_ids = []
++        if len(q) == 1:
++            # US82783: Improve query time for meter-based stats reports from
++            # Horizon. Get resource info for specified resource ids in one
++            # call as opposed to one by one.
++            # q is a list of Query objects. Convert the first and
++            # only item to dictionary to retrieve the list of resource ids.
++            d = q[0].as_dict()
++            if d['field'] == 'resource_ids':
++                r_ids = ast.literal_eval(d['value'])
++
++        if r_ids:
++            resources = [Resource.from_db_and_links(r,
++                                                    self._resource_links(
++                                                        r.resource_id,
++                                                        meter_links)) for r
++                         in pecan.request.storage_conn.get_resources_batch(
++                r_ids)]
++            return resources
++        else:
++            limit = utils.enforce_limit(limit)
++            kwargs = utils.query_to_kwargs(
++                q, pecan.request.storage_conn.get_resources, ['limit'])
++            resources = [Resource.from_db_and_links(r,
++                                                    self._resource_links(
++                                                        r.resource_id,
++                                                        meter_links)) for r
++                         in pecan.request.storage_conn.get_resources(
++                limit=limit, **kwargs)]
++            return resources
+diff --git a/ceilometer/api/controllers/v2/statistics.py b/ceilometer/api/controllers/v2/statistics.py
+index c49d93f..bbf1f4d 100644
+--- a/ceilometer/api/controllers/v2/statistics.py
++++ b/ceilometer/api/controllers/v2/statistics.py
+@@ -93,28 +93,18 @@ class StatisticsController(rest.RestController):
+                 start = timeutils.parse_isotime(i.value).replace(
+                     tzinfo=None)
+         ret = []
+-        for meter_name in meter:
+-            kwargs['meter'] = meter_name
+-            f = storage.SampleFilter(**kwargs)
+-            try:
+-                computed = pecan.request.storage_conn.get_meter_statistics(
+-                    f, period, g, aggregate)
+-                dbStats = [ScopedStatistics(meter_name,
+-                                            start_timestamp=start,
+-                                            end_timestamp=end,
+-                                            **c.as_dict())
+-                           for c in computed]
+-                ret += dbStats
+-                mem_supported = True
+-                if mem_supported:
+-                    mcomputed = pecan.request.memory_conn.get_meter_statistics(
+-                        f, period, g)
+-                    memStats = [ScopedStatistics(meter_name,
+-                                                 start_timestamp=start,
+-                                                 end_timestamp=end,
+-                                                 **c.as_dict())
+-                                for c in mcomputed]
+-                    ret += memStats
+-            except OverflowError:
+-                LOG.exception("Problem processing %s" % meter_name)
++
++        kwargs['meter'] = meter
++        f = storage.SampleFilter(**kwargs)
++        try:
++            computed = pecan.request.storage_conn.get_meter_statistics(
++                f, period, g, aggregate)
++            dbStats = [ScopedStatistics(start_timestamp=start,
++                                        end_timestamp=end,
++                                        **c.as_dict())
++                       for c in computed]
++            ret += dbStats
++        except OverflowError:
++            LOG.exception("Problem processing meters %s" % meter)
++
+         return ret
+diff --git a/ceilometer/api/controllers/v2/utils.py b/ceilometer/api/controllers/v2/utils.py
+index 90a611e..3ea66d8 100644
+--- a/ceilometer/api/controllers/v2/utils.py
++++ b/ceilometer/api/controllers/v2/utils.py
+@@ -214,6 +214,9 @@ def _validate_timestamp_fields(query, field_name, operator_list,
+ 
+ def query_to_kwargs(query, db_func, internal_keys=None,
+                     allow_timestamps=True):
++    if not query:
++        return {}
++
+     validate_query(query, db_func, internal_keys=internal_keys,
+                    allow_timestamps=allow_timestamps)
+     query = sanitize_query(query, db_func)
+diff --git a/ceilometer/pipeline.py b/ceilometer/pipeline.py
+index efeef21..eb1f7c6 100644
+--- a/ceilometer/pipeline.py
++++ b/ceilometer/pipeline.py
+@@ -444,7 +444,9 @@ class Sink(object):
+                     "No transformer named %s loaded" % transformer['name'],
+                     cfg)
+             transformers.append(ext.plugin(**parameter))
+-            LOG.info(
++            # US82783: Downgrade high frequency non-essential logs to debug
++            # to reduce I/O
++            LOG.debug(
+                 "Pipeline %(pipeline)s: Setup transformer instance %(name)s "
+                 "with parameter %(param)s" % ({'pipeline': self,
+                                                'name': transformer['name'],
+@@ -787,7 +789,9 @@ class PipelineManager(ConfigManagerBase):
+         if not ('sources' in cfg and 'sinks' in cfg):
+             raise PipelineException("Both sources & sinks are required",
+                                     cfg)
+-        LOG.info('detected decoupled pipeline config format')
++        # US82783: Downgrade high frequency non-essential logs to debug
++        # to reduce I/O
++        LOG.debug('detected decoupled pipeline config format')
+         publisher_manager = PublisherManager(self.conf, p_type['name'])
+ 
+         unique_names = set()
+diff --git a/ceilometer/publisher/messaging.py b/ceilometer/publisher/messaging.py
+index f62cfc5..329da2a 100644
+--- a/ceilometer/publisher/messaging.py
++++ b/ceilometer/publisher/messaging.py
+@@ -87,7 +87,9 @@ class MessagingPublisher(publisher.ConfigPublisherBase):
+         self.local_queue = []
+ 
+         if self.policy in ['default', 'queue', 'drop']:
+-            LOG.info('Publishing policy set to %s', self.policy)
++            # US82783: Downgrade high frequency non-essential logs to
++            # debug to reduce I/O
++            LOG.debug('Publishing policy set to %s', self.policy)
+         else:
+             LOG.warning(_('Publishing policy is unknown (%s) force to '
+                           'default'), self.policy)
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index 417836c..9fa674f 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -39,6 +39,7 @@ from sqlalchemy import distinct
+ from sqlalchemy import func
+ from sqlalchemy.orm import aliased
+ from sqlalchemy.sql.expression import cast
++from sqlalchemy.sql import text
+ 
+ import ceilometer
+ from ceilometer.i18n import _
+@@ -186,6 +187,188 @@ def make_query_from_filter(session, query, sample_filter, require_meter=True):
+     return query
+ 
+ 
++def apply_multiple_metaquery_filter(query, metaquery):
++    """This is to support multiple metadata filter
++
++    The result of this is to add a sub clause in where
++    ... and sample.resource_id in (
++        select id from metadata_xxx where <meta filter 1>
++         union select id from metadata_xxx where <meta filter 2>
++         union ...)
++    """
++
++    if len(metaquery) <= 1:
++        return apply_metaquery_filter_to_query(query, metaquery)
++
++    quires = []
++    i = 0
++    for k, value in six.iteritems(metaquery):
++        key = k[9:]  # strip out 'metadata.' prefix
++        try:
++            _model = sql_utils.META_TYPE_MAP[type(value)]
++        except KeyError:
++            raise ceilometer.NotImplementedError(
++                'Query on %(key)s is of %(value)s '
++                'type and is not supported' %
++                {"key": k, "value": type(value)})
++        else:
++            table_name = _model.__tablename__
++
++            i += 1
++            key_parm = 'key_%s' % i
++            value_parm = 'value_%s' % i
++            sql = "select id from %s where meta_key = :%s and value = :%s" % (
++                table_name, key_parm, value_parm
++            )
++            quires.append(sql)
++            query.args[key_parm] = key
++            query.args[value_parm] = value
++
++    union_clause = ' union '.join(quires)
++    query.wheres.append('sample.resource_id in (%s)' % union_clause)
++
++    return query
++
++
++def apply_metaquery_filter_to_query(query, metaquery):
++    """Apply provided metaquery filter to existing query.
++
++    :param query: SimpleQueryGenerator instance
++    :param metaquery: dict with metadata to match on.
++    """
++
++    if len(metaquery) > 1:
++        return apply_multiple_metaquery_filter(query, metaquery)
++
++    join_list = []
++    i = 0
++    for k, value in six.iteritems(metaquery):
++        key = k[9:]  # strip out 'metadata.' prefix
++        try:
++            _model = sql_utils.META_TYPE_MAP[type(value)]
++        except KeyError:
++            raise ceilometer.NotImplementedError(
++                'Query on %(key)s is of %(value)s '
++                'type and is not supported' %
++                {"key": k, "value": type(value)})
++        else:
++            table_name = _model.__tablename__
++            if table_name not in join_list:
++                join_list.append(table_name)
++
++            i += 1
++            meta_key_param = 'meta_key_{0}'.format(i)
++            meta_value_param = 'meta_value_{0}'.format(i)
++            join_clause = \
++                'join {0} on {0}.id = sample.resource_id ' \
++                'and {0}.meta_key = :{1} ' \
++                'and {0}.value = :{2}'.format(
++                    table_name, meta_key_param, meta_value_param
++                )
++            query.joins.append(join_clause)
++            query.args[meta_key_param] = key
++            query.args[meta_value_param] = value
++    return query
++
++
++def add_stats_filter_to_query(query, sample_filter):
++    """Update the query with addition filters
++
++    :param query: Query object
++    :param sample_filter: SampleFilter instance
++    Note that meter_name, start_time and end_time has already applied
++    """
++
++    if sample_filter.source:
++        query.wheres.append('resource.source_id = :source_id')
++        query.args['source_id'] = sample_filter.source
++    if sample_filter.user:
++        if sample_filter.user == 'None':
++            query.wheres.append('resource.user_id is null')
++        else:
++            query.wheres.append('resource.user_id = :user_id')
++            query.args['user_id'] = sample_filter.user
++    if sample_filter.project:
++        if sample_filter.project == 'None':
++            query.wheres.append('resource.project_id is null')
++        else:
++            query.wheres.append('resource.project_id = :project_id')
++            query.args['project_id'] = sample_filter.project
++    if sample_filter.resource:
++        query.wheres.append('resource.resource_id = :resource_id')
++        query.args['resource_id'] = sample_filter.resource
++    if sample_filter.message_id:
++        query.wheres.append('sample.message_id = :message_id')
++        query.args['message_id'] = sample_filter.message_id
++    if sample_filter.metaquery:
++        query = apply_metaquery_filter_to_query(
++            query,
++            sample_filter.metaquery
++        )
++
++    return query
++
++
++def apply_filter_to_meter_query(query, sample_filter):
++    """Update the query with additional filters
++
++    :param query: Query object
++    :param sample_filter: SampleFilter instance
++    Metadata is not applicable to meter queries
++    """
++
++    if sample_filter.user:
++        query = query.filter(
++            models.Resource.user_id == sample_filter.user)
++    if sample_filter.project:
++        query = query.filter(
++            models.Resource.project_id == sample_filter.project)
++    if sample_filter.source:
++        query = query.filter(
++            models.Resource.source_id == sample_filter.source)
++    if sample_filter.resource:
++        query = query.filter(
++            models.Resource.resource_id == sample_filter.resource)
++
++    return query
++
++
++# sqlalchemy isn't flexible enough to handle handwrite complex column
++# in query. This query generator class help to solve the problem.
++# limitation: where clause is 'and' relation
++class SimpleQueryGenerator(object):
++    def __init__(self):
++        self.columns = []
++        self.froms = []
++        self.joins = []
++        self.wheres = []
++        self.groups = []
++        self.orders = []
++        self.args = {}
++
++    def __str__(self):
++        res = 'select '
++        res = res + ', '.join(self.columns) + '\n'
++        res = res + 'FROM ' + ', '.join(self.froms) + '\n'
++
++        if len(self.joins) > 0:
++            res = res + '\n '.join(self.joins) + '\n'
++
++        if len(self.wheres) > 0:
++            res = res + 'where ' + ' and '.join(self.wheres) + '\n'
++
++        if len(self.groups) > 0:
++            res = res + 'group by ' + ', '.join(self.groups) + '\n'
++
++        if len(self.orders) > 0:
++            res = res + 'order by ' + ', '.join(self.orders) + '\n'
++
++        return res
++
++    def get_sql(self):
++        return self.__str__()
++
++
+ class Connection(base.Connection):
+     """Put the data into a SQLAlchemy database.
+ 
+@@ -605,8 +788,6 @@ class Connection(base.Connection):
+         if s_filter.meter:
+             # US82778: If a specific meter is provided which is the case for
+             # meter based stats report, use a faster query
+-            LOG.info('Executing faster query. Provided meter name = %s',
+-                     s_filter.meter)
+             subq = session.query(models.Sample.meter_id.label('m_id'),
+                                  models.Sample.resource_id.label('res_id'),
+                                  models.Meter.name.label('m_name'),
+@@ -625,8 +806,15 @@ class Connection(base.Connection):
+                 func.max(models.Resource.source_id).label('source_id'),
+                 func.max(models.Resource.user_id).label('user_id'))
+                 .join(models.Resource, models.Resource.internal_id ==
+-                      subq.c.res_id)) \
+-                .group_by(models.Resource.resource_id)
++                      subq.c.res_id))
++
++            # Apply additional filters as required. This specific function
++            # skips meter filter, which has been applied in the sub-query,
++            # as well as metadata filter. Metadata does not apply to meter
++            # related queries.
++            query_sample = apply_filter_to_meter_query(query_sample, s_filter)
++
++            query_sample = query_sample.group_by(models.Resource.resource_id)
+         else:
+             # NOTE(gordc): get latest sample of each meter/resource. we do not
+             #          filter here as we want to filter only on latest record.
+@@ -659,9 +847,18 @@ class Connection(base.Connection):
+                             .join(models.Resource,
+                                   models.Resource.internal_id ==
+                                   models.Sample.resource_id))
+-            query_sample = make_query_from_filter(session, query_sample,
+-                                                  s_filter,
+-                                                  require_meter=False)
++
++            query_sample = make_query_from_filter(
++                session,
++                query_sample,
++                s_filter,
++                require_meter=False
++            )
++
++            if s_filter.meter:
++                query_sample = query_sample.filter(
++                    models.Meter.name == s_filter.meter
++                )
+ 
+         query_sample = query_sample.limit(limit) if limit else query_sample
+ 
+@@ -765,8 +962,16 @@ class Connection(base.Connection):
+             models.Resource,
+             models.Resource.internal_id == models.Sample.resource_id).order_by(
+             models.Sample.timestamp.desc())
+-        query = make_query_from_filter(session, query, sample_filter,
+-                                       require_meter=False)
++
++        query = make_query_from_filter(
++            session,
++            query,
++            sample_filter,
++            require_meter=False
++        )
++        if sample_filter.meter:
++            query = query.filter(models.Meter.name == sample_filter.meter)
++
+         if limit:
+             query = query.limit(limit)
+         return self._retrieve_samples(query)
+@@ -829,11 +1034,7 @@ class Connection(base.Connection):
+         return functions
+ 
+     def _make_stats_query(self, sample_filter, groupby, aggregate):
+-        # A meter IS required
+-        if not sample_filter:
+-            return None
+-        if not sample_filter.meter:
+-            return None
++        # don't add meter filter, let the caller handles it
+ 
+         select = [
+             func.min(models.Sample.timestamp).label('tsmin'),
+@@ -858,8 +1059,6 @@ class Connection(base.Connection):
+ 
+         query = (
+             session.query(*select)
+-            .join(models.Meter,
+-                  models.Meter.id == models.Sample.meter_id)
+             .join(models.Resource,
+                   models.Resource.internal_id == models.Sample.resource_id)
+             .group_by(models.Meter.unit))
+@@ -909,6 +1108,99 @@ class Connection(base.Connection):
+             (g, getattr(result, g)) for g in groupby) if groupby else None)
+         return api_models.Statistics(**stats_args)
+ 
++    @staticmethod
++    def _stats_result_to_model2(
++            meter_unit, meter_name, duration_start, duration_end,
++            period, period_start, period_end, count, max, sum,
++            avg, min
++    ):
++        stats_args = {
++            'count': count, 'max': max, 'sum': sum, 'avg': avg, 'min': min
++        }
++        stats_args['unit'] = meter_unit
++        stats_args['meter_name'] = meter_name
++        duration = (timeutils.delta_seconds(duration_start, duration_end)
++                    if duration_start is not None and duration_end is not None
++                    else None)
++        stats_args['duration'] = duration
++        stats_args['duration_start'] = duration_start
++        stats_args['duration_end'] = duration_end
++        stats_args['period'] = period
++        stats_args['period_start'] = period_start
++        stats_args['period_end'] = period_end
++        stats_args['groupby'] = dict()
++        return api_models.Statistics(**stats_args)
++
++    def _get_meter(self, meter_name_list):
++        session = self._engine_facade.get_session()
++        result = {}
++        for meter_id, meter_name, meter_unit in session.query(
++                models.Meter.id, models.Meter.name, models.Meter.unit
++        ).filter(
++            models.Meter.name.in_(meter_name_list)
++        ):
++            # make it a lookup table for performance
++            result[str(meter_id)] = {
++                'meter_id': meter_id,
++                'meter_name': meter_name,
++                'meter_unit': meter_unit
++                }
++        return result
++
++    @staticmethod
++    def _generate_meter_statistics_query(sample_filter, meter_ids, period):
++        # use custom build query to aggregate by time period.
++        # note that result set may have some gaps (i.e, no result for certain
++        # period(s))
++        my_query = SimpleQueryGenerator()
++        start_time = sample_filter.start_timestamp
++        end_time = sample_filter.end_timestamp
++        grp_col = 'floor((extract(epoch from sample.timestamp) - ' \
++                  'extract(epoch from timestamp :start_time)) / ' \
++                  ':period) as grp'
++
++        my_query.columns.extend([
++            'sample.meter_id as meter_id',
++            'min(sample.timestamp) AS tsmin',
++            'max(sample.timestamp) AS tsmax',
++            'count(sample.volume) AS cnt',
++            'max(sample.volume) AS max',
++            'sum(sample.volume) AS sum',
++            'avg(sample.volume) AS avg',
++            'min(sample.volume) AS min',
++            grp_col
++        ])
++
++        my_query.froms.append('sample')
++        my_query.joins.append(
++            'join resource on resource.internal_id = sample.resource_id'
++        )
++        my_query.wheres.extend([
++            'sample.timestamp >= :start_time',
++            'sample.timestamp <= :end_time'
++        ])
++
++        idx = 0
++        in_list = []
++        for meter_id in meter_ids:
++            idx += 1
++            m_id_param = 'meter_id_%s' % idx
++            in_list.append(':' + m_id_param)
++            my_query.args[m_id_param] = meter_id
++
++        in_clause = 'sample.meter_id in (%s)' % ','.join(in_list)
++        my_query.wheres.append(in_clause)
++
++        my_query.groups.append('sample.meter_id')
++        my_query.groups.append('grp')
++        my_query.orders.append('grp')
++        my_query.args['period'] = period
++        my_query.args['start_time'] = start_time
++        my_query.args['end_time'] = end_time
++
++        add_stats_filter_to_query(my_query, sample_filter)
++        return my_query
++
+     def get_meter_statistics(self, sample_filter, period=None, groupby=None,
+                              aggregate=None):
+         """Return an iterable of api_models.Statistics instances.
+@@ -916,6 +1208,19 @@ class Connection(base.Connection):
+         Items are containing meter statistics described by the query
+         parameters. The filter must have a meter value set.
+         """
++
++        # by definition, a meter filter is required
++        # it was originally from _make_stats_query, move it to the top of
++        # function to be explicit
++        if not sample_filter:
++            return
++        if not sample_filter.meter:
++            return
++
++        meter_list = sample_filter.meter \
++            if isinstance(sample_filter.meter, list) \
++            else [sample_filter.meter]
++
+         if groupby:
+             for group in groupby:
+                 if group not in ['user_id', 'project_id', 'resource_id',
+@@ -923,10 +1228,17 @@ class Connection(base.Connection):
+                     raise ceilometer.NotImplementedError('Unable to group by '
+                                                          'these fields')
+ 
++        meter_list_dict = self._get_meter(meter_list)
++        meter_id_list = [m['meter_id'] for m in meter_list_dict.itervalues()]
++        if len(meter_id_list) == 0:
++            return
++
+         if not period:
+-            for res in self._make_stats_query(sample_filter,
+-                                              groupby,
+-                                              aggregate):
++            q = self._make_stats_query(sample_filter, groupby, aggregate)
++            q.filter(
++                models.Sample.meter_id.in_(meter_id_list)
++            )
++            for res in q:
+                 if res.count:
+                     yield self._stats_result_to_model(res, 0,
+                                                       res.tsmin, res.tsmax,
+@@ -935,9 +1247,11 @@ class Connection(base.Connection):
+             return
+ 
+         if not (sample_filter.start_timestamp and sample_filter.end_timestamp):
+-            res = self._make_stats_query(sample_filter,
+-                                         None,
+-                                         aggregate).first()
++            q = self._make_stats_query(sample_filter, None, aggregate)
++            q.filter(
++                models.Sample.meter_id.in_(meter_id_list)
++            )
++            res = q.first()
+             if not res:
+                 # NOTE(liusheng):The 'res' may be NoneType, because no
+                 # sample has found with sample filter(s).
+@@ -946,25 +1260,71 @@ class Connection(base.Connection):
+         query = self._make_stats_query(sample_filter, groupby, aggregate)
+         if not query:
+             return
+-        # HACK(jd) This is an awful method to compute stats by period, but
+-        # since we're trying to be SQL agnostic we have to write portable
+-        # code, so here it is, admire! We're going to do one request to get
+-        # stats by period. We would like to use GROUP BY, but there's no
+-        # portable way to manipulate timestamp in SQL, so we can't.
+-        for period_start, period_end in base.iter_period(
+-                sample_filter.start_timestamp or res.tsmin,
+-                sample_filter.end_timestamp or res.tsmax,
+-                period):
+-            q = query.filter(models.Sample.timestamp >= period_start)
+-            q = q.filter(models.Sample.timestamp < period_end)
+-            for r in q.all():
+-                if r.count:
+-                    yield self._stats_result_to_model(
+-                        result=r,
+-                        period=int(timeutils.delta_seconds(period_start,
+-                                                           period_end)),
+-                        period_start=period_start,
+-                        period_end=period_end,
+-                        groupby=groupby,
+-                        aggregate=aggregate
+-                    )
++
++        if not sample_filter.start_timestamp:
++            sample_filter.start_timestamp = res.tsmin
++        if not sample_filter.end_timestamp:
++            sample_filter.end_timestamp = res.tsmax
++
++        my_query = self._generate_meter_statistics_query(
++            sample_filter, meter_list_dict.keys(), period
++        )
++
++        sql = my_query.get_sql()
++        select_stm = text(sql)
++
++        start_time = sample_filter.start_timestamp
++        engine = self._engine_facade.get_engine()
++        with engine.begin() as conn:
++            result = conn.execute(select_stm, **my_query.args)
++            for row in result.fetchall():
++                grp_idx = row.grp
++                p_start = start_time + datetime.timedelta(0, period * grp_idx)
++                p_end = p_start + datetime.timedelta(0, period)
++                meter = meter_list_dict[str(row.meter_id)]
++                r = self._stats_result_to_model2(
++                    meter_unit=meter['meter_unit'],
++                    meter_name=meter['meter_name'],
++                    duration_start=row.tsmin,
++                    duration_end=row.tsmax,
++                    period=period,
++                    period_start=p_start,
++                    period_end=p_end,
++                    count=row.cnt,
++                    max=row.max,
++                    sum=row.sum,
++                    avg=row.avg,
++                    min=row.min
++                )
++                yield r
++            result.close()
++
++    def get_resources_batch(self, resource_ids):
++        """Return an iterable of api_models.Resource instances.
++
++        :param resource_ids: Mandatory list of resource IDs.
++        """
++        # US82783: WRS extension to the OpenStack Ceilometer SQL storage
++        # connection class. It provides an effective method to retrieve
++        # resource info for a batch of resource ids. This method should be
++        # used when the client does not specify user, project, source,
++        # metaquery, and start/end timestamp range in the request.
++
++        if resource_ids:
++            resids = ','.join(resource_ids)
++            engine = self._engine_facade.get_engine()
++            with engine.connect() as con:
++                stmt = text('SELECT * from resource_getbatch(:input_ids)')
++                results = con.execute(stmt, input_ids=resids)
++            for r in results.fetchall():
++                yield api_models.Resource(
++                    resource_id=r.resource_id,
++                    project_id=r.project_id,
++                    first_sample_timestamp=None,
++                    last_sample_timestamp=None,
++                    source=r.source_id,
++                    user_id=r.user_id,
++                    metadata=jsonutils.loads(r.resource_metadata)
++                )
++        else:
++            raise RuntimeError('Missing required list of resource ids')
+diff --git a/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py b/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py
+index ab2a043..89aebe3 100644
+--- a/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py
++++ b/ceilometer/storage/sqlalchemy/migrate_repo/versions/045_add_unique_constraint_and_stored_proc.py
+@@ -153,3 +153,57 @@ def upgrade(migrate_engine):
+     )
+ 
+     migrate_engine.execute(t)
++
++    # Since there's no CREATE OR REPLACE TYPE and sqlalchemy engine
++    # does not run the Postgres script to check if resourcedata
++    # type exists in the pg_type table before creating one properly,
++    # the safest option is to drop the stored proc which depends
++    # on the type and the type if they exist before creating them.
++
++    t = text(
++        "DROP FUNCTION IF EXISTS resource_getbatch(text);"
++    )
++
++    migrate_engine.execute(t)
++
++    t = text(
++        "DROP TYPE IF EXISTS resourcedata;"
++    )
++
++    migrate_engine.execute(t)
++
++    t = text(
++        "CREATE TYPE resourcedata AS ("
++        "resource_id character varying(255), user_id character varying(255), "
++        "project_id character varying(255), source_id character varying(255), "
++        "resource_metadata text);"
++    )
++
++    migrate_engine.execute(t)
++
++    # Use multiple query method in the following stored proc as opposed to
++    # IN/= ANY clause as we want to limit the number of items for
++    # each matching resource_id to 1. The query is precompiled and query
++    # plan is cached so it will be just as fast.
++
++    t = text(
++        "CREATE FUNCTION resource_getbatch(resource_ids text) RETURNS "
++        "SETOF resourcedata AS\n"
++        "$BODY$\n"
++        "   DECLARE\n"
++        "       r       text;\n"
++        "       resids  text[] := string_to_array($1, ',');\n"
++        "   BEGIN\n"
++        "       FOREACH r IN ARRAY resids LOOP\n"
++        "           $1 = r;\n"
++        "           RETURN QUERY EXECUTE 'SELECT resource_id, user_id, "
++        "project_id, source_id, resource_metadata FROM resource WHERE "
++        "resource_id = $1 LIMIT 1'\n"
++        "USING r;\n"
++        "       END LOOP;\n"
++        "   END;\n"
++        "$BODY$\n"
++        "LANGUAGE plpgsql;"
++    )
++
++    migrate_engine.execute(t)
+diff --git a/ceilometer/tests/unit/publisher/test_messaging_publisher.py b/ceilometer/tests/unit/publisher/test_messaging_publisher.py
+index 6be8ada..0136804 100644
+--- a/ceilometer/tests/unit/publisher/test_messaging_publisher.py
++++ b/ceilometer/tests/unit/publisher/test_messaging_publisher.py
+@@ -221,7 +221,7 @@ class TestPublisherPolicy(TestPublisher):
+                 msg_publisher.DeliveryFailure,
+                 getattr(publisher, self.pub_func),
+                 self.test_data)
+-            self.assertTrue(mylog.info.called)
++            # self.assertTrue(mylog.info.called)
+             self.assertEqual('default', publisher.policy)
+             self.assertEqual(0, len(publisher.local_queue))
+             self.assertEqual(100, len(fake_send.mock_calls))
+@@ -240,7 +240,7 @@ class TestPublisherPolicy(TestPublisher):
+                 msg_publisher.DeliveryFailure,
+                 getattr(publisher, self.pub_func),
+                 self.test_data)
+-            self.assertTrue(mylog.info.called)
++            # self.assertTrue(mylog.info.called)
+             self.assertEqual(0, len(publisher.local_queue))
+             self.assertEqual(100, len(fake_send.mock_calls))
+             fake_send.assert_called_with(
+-- 
+2.7.4
+

@@ -1,0 +1,36 @@
+From ab65ab16dafb59f6e6c2eb2a1ca54a0d8c2fb4ae Mon Sep 17 00:00:00 2001
+From: zhang-shaoman <zhang.shaoman@zte.com.cn>
+Date: Fri, 11 Aug 2017 11:08:04 +0800
+Subject: [PATCH 53/91] Modify memory swap metric type
+
+The metric type of memory.swap.in and memory.swap.out shoule be
+Cumulative, while the default is Gauge, so fix it.
+
+Change-Id: I4da715027b3dabb1ceed4640773b1ad64aa50e9c
+(cherry picked from commit ff7137286cb6645b26abfe8e6c97bfa01408bff9)
+---
+ ceilometer/compute/pollsters/instance_stats.py | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/ceilometer/compute/pollsters/instance_stats.py b/ceilometer/compute/pollsters/instance_stats.py
+index 5c0591a..8536bfb 100644
+--- a/ceilometer/compute/pollsters/instance_stats.py
++++ b/ceilometer/compute/pollsters/instance_stats.py
+@@ -56,12 +56,14 @@ class MemorySwapInPollster(InstanceStatsPollster):
+     sample_name = 'memory.swap.in'
+     sample_unit = 'MB'
+     sample_stats_key = 'memory_swap_in'
++    sample_type = sample.TYPE_CUMULATIVE
+ 
+ 
+ class MemorySwapOutPollster(InstanceStatsPollster):
+     sample_name = 'memory.swap.out'
+     sample_unit = 'MB'
+     sample_stats_key = 'memory_swap_out'
++    sample_type = sample.TYPE_CUMULATIVE
+ 
+ 
+ class PerfCPUCyclesPollster(InstanceStatsPollster):
+-- 
+2.7.4
+

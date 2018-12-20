@@ -1,0 +1,22 @@
+From 949fa6d05168aeb48c47d466e1daa7ee9ad151b8 Mon Sep 17 00:00:00 2001
+From: Al Bailey <Al.Bailey@windriver.com>
+Date: Wed, 8 Nov 2017 15:17:52 -0600
+Subject: [PATCH 30/91] US104439: Pike rebase.  Send ceilometer events to panko
+
+---
+ ceilometer/pipeline/data/event_pipeline.yaml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/ceilometer/pipeline/data/event_pipeline.yaml b/ceilometer/pipeline/data/event_pipeline.yaml
+index 6482f4f..d2311b1 100644
+--- a/ceilometer/pipeline/data/event_pipeline.yaml
++++ b/ceilometer/pipeline/data/event_pipeline.yaml
+@@ -9,4 +9,4 @@ sinks:
+     - name: event_sink
+       transformers:
+       publishers:
+-          - gnocchi://
++          - direct://?dispatcher=panko
+-- 
+2.7.4
+

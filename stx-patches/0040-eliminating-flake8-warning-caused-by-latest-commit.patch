@@ -1,0 +1,32 @@
+From ef4d03ecb38b59519a17e43aee00f57a68e59a36 Mon Sep 17 00:00:00 2001
+From: Alex Kozyrev <alex.kozyrev@windriver.com>
+Date: Fri, 5 Jan 2018 10:50:58 -0500
+Subject: [PATCH 40/91] eliminating flake8 warning caused by latest commit
+
+---
+ ceilometer/storage/impl_sqlalchemy.py | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/ceilometer/storage/impl_sqlalchemy.py b/ceilometer/storage/impl_sqlalchemy.py
+index cc0cd3c..c554e57 100644
+--- a/ceilometer/storage/impl_sqlalchemy.py
++++ b/ceilometer/storage/impl_sqlalchemy.py
+@@ -628,9 +628,12 @@ class Connection(base.Connection):
+         with engine.connect() as conn:
+             result = conn.execute(text('SELECT last_value FROM meter_id_seq;'))
+             first_row = result.first()
+-            if first_row is not None and first_row['last_value'] > 1717986918:
+-                conn.execute(text('ALTER SEQUENCE meter_id_seq RESTART WITH 1;'))
+-                LOG.info("restart sample id sequence, last value was %d", first_row['last_value'])
++            if first_row is not None and \
++               first_row['last_value'] > 7378697629483820646:
++                stmt = text('ALTER SEQUENCE meter_id_seq RESTART WITH 1;')
++                conn.execute(stmt)
++                LOG.info("restart sample id sequence, last value was %d",
++                         first_row['last_value'])
+ 
+         if not self.conf.database.sql_expire_samples_only:
+             with session.begin():
+-- 
+2.7.4
+

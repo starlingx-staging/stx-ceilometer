@@ -1,0 +1,68 @@
+From 15dbcc630ccc46fd733de42ff73a0f0d7b786bc4 Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Mon, 20 Mar 2017 18:48:50 -0400
+Subject: [PATCH 24/91] US103891: Pike Rebase. CGTS-6523: Regression: Sample is
+ not listed in ceilometer sample list after 30 seconds
+
+The root cause is ceilometer-agent-notification and ceilometer-collector children processes
+hang up after ceilometer pipelines been modified. Sometimes, if kill command sends HUP signal
+to the sample child process twice, child process will hang up forever. Make the change in the
+terminate, ignore additional HUP/TERM signal.
+---
+ ceilometer/collector.py    | 7 +++++++
+ ceilometer/notification.py | 7 +++++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/ceilometer/collector.py b/ceilometer/collector.py
+index b7733be..0d7ca54 100644
+--- a/ceilometer/collector.py
++++ b/ceilometer/collector.py
+@@ -22,6 +22,7 @@
+ 
+ from itertools import chain
+ import select
++import signal
+ import socket
+ 
+ import cotyledon
+@@ -157,6 +158,12 @@ class CollectorService(cotyledon.Service):
+                                 'discarding: %s', sample)
+ 
+     def terminate(self):
++        try:
++            signal.signal(signal.SIGHUP, signal.SIG_IGN)
++            signal.signal(signal.SIGTERM, signal.SIG_IGN)
++        except Exception:
++            LOG.debug("Signal only works in main thread.")
++
+         # CGTS-5124: Parent process does not have sample_listener and
+         # event-listener. Ensure the stop sequence is run to completion
+         # otherwise the child processes won't get terminated and release
+diff --git a/ceilometer/notification.py b/ceilometer/notification.py
+index b4beb33..e0fa40e 100644
+--- a/ceilometer/notification.py
++++ b/ceilometer/notification.py
+@@ -27,6 +27,7 @@ from oslo_config import cfg
+ from oslo_log import log
+ import oslo_messaging
+ import six
++import signal
+ from stevedore import extension
+ from tooz import coordination
+ 
+@@ -319,6 +320,12 @@ class NotificationService(cotyledon.Service):
+         self.pipeline_listener.start(override_pool_size=batch)
+ 
+     def terminate(self):
++        try:
++            signal.signal(signal.SIGHUP, signal.SIG_IGN)
++            signal.signal(signal.SIGTERM, signal.SIG_IGN)
++        except Exception:
++            LOG.debug("Signal only works in main thread.")
++
+         self.shutdown = True
+         if self.periodic:
+             self.periodic.stop()
+-- 
+2.7.4
+

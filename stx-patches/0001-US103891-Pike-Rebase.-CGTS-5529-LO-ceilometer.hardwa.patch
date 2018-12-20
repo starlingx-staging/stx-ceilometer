@@ -1,0 +1,46 @@
+From d4525228de7369e41eb6dc9935e279e7bf73c454 Mon Sep 17 00:00:00 2001
+From: Tee Ngo <tee.ngo@windriver.com>
+Date: Wed, 11 Jan 2017 15:16:14 -0500
+Subject: [PATCH 01/91] US103891: Pike Rebase. CGTS-5529: LO:
+ ceilometer.hardware.discovery ERROR logs filling up openstack.log
+
+It's been confirmed that TiS is not using TripleO overcloud. Plugin is removed.
+Also downgrade another harmless and highly frequent log, which is filling up
+ceilometer-api.log in large office, from warning to debug.
+---
+ ceilometer/api/controllers/v2/root.py | 6 +++---
+ setup.cfg                             | 1 -
+ 2 files changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/ceilometer/api/controllers/v2/root.py b/ceilometer/api/controllers/v2/root.py
+index e2dbc20..5cc7c21 100644
+--- a/ceilometer/api/controllers/v2/root.py
++++ b/ceilometer/api/controllers/v2/root.py
+@@ -151,9 +151,9 @@ class V2Controller(object):
+                     LOG.warning("Can't connect to keystone, assuming aodh "
+                                 "is disabled and retry later.")
+                 else:
+-                    LOG.warning("ceilometer-api started with aodh "
+-                                "enabled. Alarms URLs will be redirected "
+-                                "to aodh endpoint.")
++                    LOG.debug("ceilometer-api started with aodh "
++                              "enabled. Alarms URLs will be redirected "
++                              "to aodh endpoint.")
+         return self._aodh_url
+ 
+     @property
+diff --git a/setup.cfg b/setup.cfg
+index cdbd4dc..5857fd9 100644
+--- a/setup.cfg
++++ b/setup.cfg
+@@ -69,7 +69,6 @@ ceilometer.discover.central =
+     ipsec_connections  = ceilometer.network.services.discovery:IPSecConnectionsDiscovery
+     fw_services = ceilometer.network.services.discovery:FirewallDiscovery
+     fw_policy = ceilometer.network.services.discovery:FirewallPolicyDiscovery
+-    tripleo_overcloud_nodes = ceilometer.hardware.discovery:NodesDiscoveryTripleO
+     fip_services = ceilometer.network.services.discovery:FloatingIPDiscovery
+     images = ceilometer.image.discovery:ImagesDiscovery
+     volumes = ceilometer.volume.discovery:VolumeDiscovery
+-- 
+2.7.4
+

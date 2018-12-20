@@ -1,0 +1,39 @@
+From 2c5875e755c7ca3d1678e56883b1096fe91b4254 Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Wed, 13 Dec 2017 10:27:51 -0500
+Subject: [PATCH 34/91] US106592:Pike Rebase.Fix unicode encoding issue in
+ ceilometer csvfile publisher
+
+Fix the issue was introduced by the fix of CGTS-7013.
+
+Removed the encoding="utf8" from log handler since all returned samples have been encoded to str type,
+the non-acscii characters cannot be written into file if trying to encode str type.
+---
+ ceilometer/publisher/csvfile.py | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/ceilometer/publisher/csvfile.py b/ceilometer/publisher/csvfile.py
+index 75cb795..cfd2d13 100644
+--- a/ceilometer/publisher/csvfile.py
++++ b/ceilometer/publisher/csvfile.py
+@@ -288,7 +288,6 @@ class CSVFilePublisher(publisher.ConfigPublisherBase):
+         # create compressable rotating file handler
+         self.rfh = CompressingRotatingFileHandler(
+             self.location,
+-            encoding='utf8',
+             maxBytes=self.max_bytes,
+             backupCount=self.backup_count,
+             compression='gzip',
+@@ -368,8 +367,7 @@ class CSVFilePublisher(publisher.ConfigPublisherBase):
+         csv_handle = io.BytesIO()
+         w = csv.writer(csv_handle)
+         formatted_list = self.convert_to_ordered_list(sample.as_dict())
+-        formatted_list = six.text_type(formatted_list)
+-        w.writerow(formatted_list)
++        w.writerow([u.encode('utf-8') for u in formatted_list])
+         return csv_handle.getvalue().strip()
+ 
+     def publish_samples(self, samples):
+-- 
+2.7.4
+

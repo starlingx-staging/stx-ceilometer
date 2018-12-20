@@ -1,0 +1,1329 @@
+From 019b6a241da05f1b60f710e233a5e640913c79c3 Mon Sep 17 00:00:00 2001
+From: Nam Nguyen Hoai <namnh@vn.fujitsu.com>
+Date: Thu, 5 Oct 2017 16:32:35 +0700
+Subject: [PATCH 45/91] Migrate to Zuul v3
+
+Migrate all functional jobs and gate to zuul v3.
+We will have to migrate all other legacy jobs too later.
+This patch do step 1 in the docs: Move Legacy Jobs to Projects.
+
+diff:
+- do not port elasticsearch check
+- remove jobs unrelated to branch
+- cleanup telemetry-integration gate
+
+Co-Authored-By: gord chung <gord@live.ca>
+Co-Authored-By: Dai Dang Van <daidv@vn.fujitsu.com>
+Change-Id: Idf49c523c1d0632e8d095e4804817e7b5e772902
+(cherry picked from commit cc7950c86fed77e3395504530ac5dd116b4b4e5b)
+---
+ .zuul.yaml                                         | 123 +++++++++++++++++++++
+ .../post.yaml                                      |  80 ++++++++++++++
+ .../run.yaml                                       |  51 +++++++++
+ .../post.yaml                                      |  80 ++++++++++++++
+ .../run.yaml                                       |  51 +++++++++
+ .../ceilometer-dsvm-tempest-plugin-mysql/post.yaml |  80 ++++++++++++++
+ .../ceilometer-dsvm-tempest-plugin-mysql/run.yaml  |  51 +++++++++
+ .../legacy/ceilometer-tox-py27-mongodb/post.yaml   |  67 +++++++++++
+ .../legacy/ceilometer-tox-py27-mongodb/run.yaml    |  86 ++++++++++++++
+ .../legacy/ceilometer-tox-py27-mysql/post.yaml     |  67 +++++++++++
+ .../legacy/ceilometer-tox-py27-mysql/run.yaml      |  86 ++++++++++++++
+ .../ceilometer-tox-py27-postgresql/post.yaml       |  67 +++++++++++
+ .../legacy/ceilometer-tox-py27-postgresql/run.yaml |  86 ++++++++++++++
+ playbooks/legacy/grenade-dsvm-ceilometer/post.yaml |  15 +++
+ playbooks/legacy/grenade-dsvm-ceilometer/run.yaml  |  43 +++++++
+ .../post.yaml                                      |  80 ++++++++++++++
+ .../telemetry-dsvm-integration-ceilometer/run.yaml |  56 ++++++++++
+ 17 files changed, 1169 insertions(+)
+ create mode 100644 .zuul.yaml
+ create mode 100644 playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/post.yaml
+ create mode 100644 playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/run.yaml
+ create mode 100644 playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/post.yaml
+ create mode 100644 playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/run.yaml
+ create mode 100644 playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/post.yaml
+ create mode 100644 playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/run.yaml
+ create mode 100644 playbooks/legacy/ceilometer-tox-py27-mongodb/post.yaml
+ create mode 100644 playbooks/legacy/ceilometer-tox-py27-mongodb/run.yaml
+ create mode 100644 playbooks/legacy/ceilometer-tox-py27-mysql/post.yaml
+ create mode 100644 playbooks/legacy/ceilometer-tox-py27-mysql/run.yaml
+ create mode 100644 playbooks/legacy/ceilometer-tox-py27-postgresql/post.yaml
+ create mode 100644 playbooks/legacy/ceilometer-tox-py27-postgresql/run.yaml
+ create mode 100644 playbooks/legacy/grenade-dsvm-ceilometer/post.yaml
+ create mode 100644 playbooks/legacy/grenade-dsvm-ceilometer/run.yaml
+ create mode 100644 playbooks/legacy/telemetry-dsvm-integration-ceilometer/post.yaml
+ create mode 100644 playbooks/legacy/telemetry-dsvm-integration-ceilometer/run.yaml
+
+diff --git a/.zuul.yaml b/.zuul.yaml
+new file mode 100644
+index 0000000..7b67ff2
+--- /dev/null
++++ b/.zuul.yaml
+@@ -0,0 +1,123 @@
++- job:
++    name: ceilometer-dsvm-tempest-plugin-mongodb
++    parent: legacy-dsvm-base
++    run: playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/run
++    post-run: playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/post
++    timeout: 7800
++    required-projects:
++      - openstack-infra/devstack-gate
++      - openstack/ceilometer
++      - openstack/tempest
++
++- job:
++    name: ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only
++    parent: legacy-dsvm-base
++    run: playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/run
++    post-run: playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/post
++    timeout: 7800
++    required-projects:
++      - openstack-infra/devstack-gate
++      - openstack/ceilometer
++      - openstack/tempest
++
++- job:
++    name: ceilometer-dsvm-tempest-plugin-mysql
++    parent: legacy-dsvm-base
++    run: playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/run
++    post-run: playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/post
++    timeout: 7800
++    required-projects:
++      - openstack-infra/devstack-gate
++      - openstack/ceilometer
++      - openstack/tempest
++
++- job:
++    name: ceilometer-tox-py27-mongodb
++    parent: legacy-base
++    run: playbooks/legacy/ceilometer-tox-py27-mongodb/run
++    post-run: playbooks/legacy/ceilometer-tox-py27-mongodb/post
++    timeout: 2400
++    required-projects:
++      - openstack/requirements
++
++- job:
++    name: ceilometer-tox-py27-mysql
++    parent: legacy-base
++    run: playbooks/legacy/ceilometer-tox-py27-mysql/run
++    post-run: playbooks/legacy/ceilometer-tox-py27-mysql/post
++    timeout: 2400
++    required-projects:
++      - openstack/requirements
++
++- job:
++    name: ceilometer-tox-py27-postgresql
++    parent: legacy-base
++    run: playbooks/legacy/ceilometer-tox-py27-postgresql/run
++    post-run: playbooks/legacy/ceilometer-tox-py27-postgresql/post
++    timeout: 2400
++    required-projects:
++      - openstack/requirements
++
++- job:
++    name: grenade-dsvm-ceilometer
++    parent: legacy-dsvm-base
++    run: playbooks/legacy/grenade-dsvm-ceilometer/run
++    post-run: playbooks/legacy/grenade-dsvm-ceilometer/post
++    timeout: 10800
++    required-projects:
++      - openstack-dev/grenade
++      - openstack-infra/devstack-gate
++      - openstack/ceilometer
++
++- job:
++    name: telemetry-dsvm-integration-ceilometer
++    parent: legacy-dsvm-base
++    run: playbooks/legacy/telemetry-dsvm-integration-ceilometer/run
++    post-run: playbooks/legacy/telemetry-dsvm-integration-ceilometer/post
++    timeout: 7800
++    required-projects:
++      - openstack-infra/devstack-gate
++      - openstack/aodh
++      - openstack/ceilometer
++      - openstack/panko
++      # following are required when DEVSTACK_GATE_HEAT, which this
++      # job turns on
++      - openstack/dib-utils
++      - openstack/diskimage-builder
++
++- project:
++    name: openstack/ceilometer
++    check:
++      jobs:
++        - ceilometer-dsvm-tempest-plugin-mongodb
++        - ceilometer-dsvm-tempest-plugin-mysql
++        - ceilometer-tox-py27-mongodb:
++            branches: ^(?!stable/newton)
++        - ceilometer-tox-py27-mysql:
++            branches: ^(?!stable/newton)
++        - ceilometer-tox-py27-postgresql:
++            branches: ^(?!stable/newton)
++        - grenade-dsvm-ceilometer:
++            branches: ^(?!stable/newton).*$
++            irrelevant-files:
++              - ^(test-|)requirements.txt$
++              - ^setup.cfg$
++        - telemetry-dsvm-integration-ceilometer
++        - ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only
++    gate:
++      jobs:
++        - ceilometer-dsvm-tempest-plugin-mongodb
++        - ceilometer-dsvm-tempest-plugin-mysql
++        - ceilometer-tox-py27-mongodb:
++            branches: ^(?!stable/newton)
++        - ceilometer-tox-py27-mysql:
++            branches: ^(?!stable/newton)
++        - ceilometer-tox-py27-postgresql:
++            branches: ^(?!stable/newton)
++        - grenade-dsvm-ceilometer:
++            branches: ^(?!stable/newton).*$
++            irrelevant-files:
++              - ^(test-|)requirements.txt$
++              - ^setup.cfg$
++        - telemetry-dsvm-integration-ceilometer
++        - ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only
+diff --git a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/post.yaml b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/post.yaml
+new file mode 100644
+index 0000000..dac8753
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/post.yaml
+@@ -0,0 +1,80 @@
++- hosts: primary
++  tasks:
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*nose_results.html
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testr_results.html.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.testrepository/tmp*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testrepository.subunit.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}/tox'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.tox/*/log/*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/logs/**
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
+diff --git a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/run.yaml b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/run.yaml
+new file mode 100644
+index 0000000..36f3164
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only/run.yaml
+@@ -0,0 +1,51 @@
++- hosts: all
++  name: Autoconverted job legacy-ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only
++    from old job gate-ceilometer-dsvm-tempest-plugin-mongodb-identity-v3-only-ubuntu-xenial
++  tasks:
++
++    - name: Ensure legacy workspace directory
++      file:
++        path: '{{ ansible_user_dir }}/workspace'
++        state: directory
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          cat > clonemap.yaml << EOF
++          clonemap:
++            - name: openstack-infra/devstack-gate
++              dest: devstack-gate
++          EOF
++          /usr/zuul-env/bin/zuul-cloner -m clonemap.yaml --cache-dir /opt/git \
++              git://git.openstack.org \
++              openstack-infra/devstack-gate
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          export PYTHONUNBUFFERED=true
++          export DEVSTACK_GATE_TEMPEST=1
++          export DEVSTACK_GATE_TEMPEST_REGEX="^ceilometer\."
++          export DEVSTACK_GATE_TEMPEST_ALL_PLUGINS=1
++          export DEVSTACK_GATE_CEILOMETER_BACKEND=mongodb
++          export DEVSTACK_LOCAL_CONFIG="enable_plugin ceilometer git://git.openstack.org/openstack/ceilometer"
++          export BRANCH_OVERRIDE=default
++          if [ "$BRANCH_OVERRIDE" != "default" ] ; then
++              export OVERRIDE_ZUUL_BRANCH=$BRANCH_OVERRIDE
++          fi
++          if [ "mongodb" = "postgresql" ] ; then
++              export DEVSTACK_GATE_POSTGRES=1
++          fi
++          if [ "-identity-v3-only" == "-identity-v3-only" ] ; then
++              export DEVSTACK_LOCAL_CONFIG+=$'\n'"ENABLE_IDENTITY_V2=False"
++          fi
++          cp devstack-gate/devstack-vm-gate-wrap.sh ./safe-devstack-vm-gate-wrap.sh
++          ./safe-devstack-vm-gate-wrap.sh
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
+diff --git a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/post.yaml b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/post.yaml
+new file mode 100644
+index 0000000..dac8753
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/post.yaml
+@@ -0,0 +1,80 @@
++- hosts: primary
++  tasks:
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*nose_results.html
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testr_results.html.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.testrepository/tmp*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testrepository.subunit.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}/tox'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.tox/*/log/*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/logs/**
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
+diff --git a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/run.yaml b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/run.yaml
+new file mode 100644
+index 0000000..3d0030e
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mongodb/run.yaml
+@@ -0,0 +1,51 @@
++- hosts: all
++  name: Autoconverted job legacy-ceilometer-dsvm-tempest-plugin-mongodb from old job
++    gate-ceilometer-dsvm-tempest-plugin-mongodb-ubuntu-xenial
++  tasks:
++
++    - name: Ensure legacy workspace directory
++      file:
++        path: '{{ ansible_user_dir }}/workspace'
++        state: directory
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          cat > clonemap.yaml << EOF
++          clonemap:
++            - name: openstack-infra/devstack-gate
++              dest: devstack-gate
++          EOF
++          /usr/zuul-env/bin/zuul-cloner -m clonemap.yaml --cache-dir /opt/git \
++              git://git.openstack.org \
++              openstack-infra/devstack-gate
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          export PYTHONUNBUFFERED=true
++          export DEVSTACK_GATE_TEMPEST=1
++          export DEVSTACK_GATE_TEMPEST_REGEX="^ceilometer\."
++          export DEVSTACK_GATE_TEMPEST_ALL_PLUGINS=1
++          export DEVSTACK_GATE_CEILOMETER_BACKEND=mongodb
++          export DEVSTACK_LOCAL_CONFIG="enable_plugin ceilometer git://git.openstack.org/openstack/ceilometer"
++          export BRANCH_OVERRIDE=default
++          if [ "$BRANCH_OVERRIDE" != "default" ] ; then
++              export OVERRIDE_ZUUL_BRANCH=$BRANCH_OVERRIDE
++          fi
++          if [ "mongodb" = "postgresql" ] ; then
++              export DEVSTACK_GATE_POSTGRES=1
++          fi
++          if [ "" == "-identity-v3-only" ] ; then
++              export DEVSTACK_LOCAL_CONFIG+=$'\n'"ENABLE_IDENTITY_V2=False"
++          fi
++          cp devstack-gate/devstack-vm-gate-wrap.sh ./safe-devstack-vm-gate-wrap.sh
++          ./safe-devstack-vm-gate-wrap.sh
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
+diff --git a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/post.yaml b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/post.yaml
+new file mode 100644
+index 0000000..dac8753
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/post.yaml
+@@ -0,0 +1,80 @@
++- hosts: primary
++  tasks:
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*nose_results.html
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testr_results.html.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.testrepository/tmp*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testrepository.subunit.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}/tox'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.tox/*/log/*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/logs/**
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
+diff --git a/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/run.yaml b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/run.yaml
+new file mode 100644
+index 0000000..9433c9a
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-dsvm-tempest-plugin-mysql/run.yaml
+@@ -0,0 +1,51 @@
++- hosts: all
++  name: Autoconverted job legacy-ceilometer-dsvm-tempest-plugin-mysql from old job
++    gate-ceilometer-dsvm-tempest-plugin-mysql-ubuntu-xenial
++  tasks:
++
++    - name: Ensure legacy workspace directory
++      file:
++        path: '{{ ansible_user_dir }}/workspace'
++        state: directory
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          cat > clonemap.yaml << EOF
++          clonemap:
++            - name: openstack-infra/devstack-gate
++              dest: devstack-gate
++          EOF
++          /usr/zuul-env/bin/zuul-cloner -m clonemap.yaml --cache-dir /opt/git \
++              git://git.openstack.org \
++              openstack-infra/devstack-gate
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          export PYTHONUNBUFFERED=true
++          export DEVSTACK_GATE_TEMPEST=1
++          export DEVSTACK_GATE_TEMPEST_REGEX="^ceilometer\."
++          export DEVSTACK_GATE_TEMPEST_ALL_PLUGINS=1
++          export DEVSTACK_GATE_CEILOMETER_BACKEND=mysql
++          export DEVSTACK_LOCAL_CONFIG="enable_plugin ceilometer git://git.openstack.org/openstack/ceilometer"
++          export BRANCH_OVERRIDE=default
++          if [ "$BRANCH_OVERRIDE" != "default" ] ; then
++              export OVERRIDE_ZUUL_BRANCH=$BRANCH_OVERRIDE
++          fi
++          if [ "mysql" = "postgresql" ] ; then
++              export DEVSTACK_GATE_POSTGRES=1
++          fi
++          if [ "" == "-identity-v3-only" ] ; then
++              export DEVSTACK_LOCAL_CONFIG+=$'\n'"ENABLE_IDENTITY_V2=False"
++          fi
++          cp devstack-gate/devstack-vm-gate-wrap.sh ./safe-devstack-vm-gate-wrap.sh
++          ./safe-devstack-vm-gate-wrap.sh
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
+diff --git a/playbooks/legacy/ceilometer-tox-py27-mongodb/post.yaml b/playbooks/legacy/ceilometer-tox-py27-mongodb/post.yaml
+new file mode 100644
+index 0000000..68fbdf8
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-tox-py27-mongodb/post.yaml
+@@ -0,0 +1,67 @@
++- hosts: primary
++  tasks:
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*nose_results.html
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testr_results.html.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.testrepository/tmp*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testrepository.subunit.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}/tox'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.tox/*/log/*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
+diff --git a/playbooks/legacy/ceilometer-tox-py27-mongodb/run.yaml b/playbooks/legacy/ceilometer-tox-py27-mongodb/run.yaml
+new file mode 100644
+index 0000000..42391ed
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-tox-py27-mongodb/run.yaml
+@@ -0,0 +1,86 @@
++- hosts: all
++  name: Autoconverted job legacy-ceilometer-tox-py27-mongodb from old job gate-ceilometer-tox-py27-mongodb-ubuntu-xenial
++  tasks:
++
++    - name: Ensure legacy workspace directory
++      file:
++        path: '{{ ansible_user_dir }}/workspace'
++        state: directory
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          CLONEMAP=`mktemp`
++          REQS_DIR=`mktemp -d`
++          function cleanup {
++              mkdir -p $WORKSPACE
++              rm -rf $CLONEMAP $REQS_DIR
++          }
++          trap cleanup EXIT
++          cat > $CLONEMAP << EOF
++          clonemap:
++            - name: $ZUUL_PROJECT
++              dest: .
++          EOF
++          # zuul cloner works poorly if there are 2 names that are the
++          # same in here.
++          if [[ "$ZUUL_PROJECT" != "openstack/requirements" ]]; then
++          cat >> $CLONEMAP << EOF
++            - name: openstack/requirements
++              dest: $REQS_DIR
++          EOF
++          fi
++          /usr/zuul-env/bin/zuul-cloner -m $CLONEMAP --cache-dir /opt/git \
++              git://git.openstack.org $ZUUL_PROJECT openstack/requirements
++          # REQS_DIR is not set for openstack/requirements and there is also
++          # no need to copy in this case.
++          if [[ "$ZUUL_PROJECT" != "openstack/requirements" ]]; then
++              cp $REQS_DIR/upper-constraints.txt ./
++          fi
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: /usr/local/jenkins/slave_scripts/install-distro-packages.sh
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          if [ -x tools/test-setup.sh ] ; then
++            tools/test-setup.sh
++          fi
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          set -x
++          sudo rm -f /etc/sudoers.d/zuul
++          # Prove that general sudo access is actually revoked
++          ! sudo -n true
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: /usr/local/jenkins/slave_scripts/run-tox.sh py27-mongodb
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          OUT=`git ls-files --other --exclude-standard --directory`
++          if [ -z "$OUT" ]; then
++              echo "No extra files created during test."
++              exit 0
++          else
++              echo "The following un-ignored files were created during the test:"
++              echo "$OUT"
++              exit 0  # TODO: change to 1 to fail tests.
++          fi
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
+diff --git a/playbooks/legacy/ceilometer-tox-py27-mysql/post.yaml b/playbooks/legacy/ceilometer-tox-py27-mysql/post.yaml
+new file mode 100644
+index 0000000..68fbdf8
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-tox-py27-mysql/post.yaml
+@@ -0,0 +1,67 @@
++- hosts: primary
++  tasks:
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*nose_results.html
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testr_results.html.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.testrepository/tmp*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testrepository.subunit.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}/tox'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.tox/*/log/*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
+diff --git a/playbooks/legacy/ceilometer-tox-py27-mysql/run.yaml b/playbooks/legacy/ceilometer-tox-py27-mysql/run.yaml
+new file mode 100644
+index 0000000..181119f
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-tox-py27-mysql/run.yaml
+@@ -0,0 +1,86 @@
++- hosts: all
++  name: Autoconverted job legacy-ceilometer-tox-py27-mysql from old job gate-ceilometer-tox-py27-mysql-ubuntu-xenial
++  tasks:
++
++    - name: Ensure legacy workspace directory
++      file:
++        path: '{{ ansible_user_dir }}/workspace'
++        state: directory
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          CLONEMAP=`mktemp`
++          REQS_DIR=`mktemp -d`
++          function cleanup {
++              mkdir -p $WORKSPACE
++              rm -rf $CLONEMAP $REQS_DIR
++          }
++          trap cleanup EXIT
++          cat > $CLONEMAP << EOF
++          clonemap:
++            - name: $ZUUL_PROJECT
++              dest: .
++          EOF
++          # zuul cloner works poorly if there are 2 names that are the
++          # same in here.
++          if [[ "$ZUUL_PROJECT" != "openstack/requirements" ]]; then
++          cat >> $CLONEMAP << EOF
++            - name: openstack/requirements
++              dest: $REQS_DIR
++          EOF
++          fi
++          /usr/zuul-env/bin/zuul-cloner -m $CLONEMAP --cache-dir /opt/git \
++              git://git.openstack.org $ZUUL_PROJECT openstack/requirements
++          # REQS_DIR is not set for openstack/requirements and there is also
++          # no need to copy in this case.
++          if [[ "$ZUUL_PROJECT" != "openstack/requirements" ]]; then
++              cp $REQS_DIR/upper-constraints.txt ./
++          fi
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: /usr/local/jenkins/slave_scripts/install-distro-packages.sh
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          if [ -x tools/test-setup.sh ] ; then
++            tools/test-setup.sh
++          fi
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          set -x
++          sudo rm -f /etc/sudoers.d/zuul
++          # Prove that general sudo access is actually revoked
++          ! sudo -n true
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: /usr/local/jenkins/slave_scripts/run-tox.sh py27-mysql
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          OUT=`git ls-files --other --exclude-standard --directory`
++          if [ -z "$OUT" ]; then
++              echo "No extra files created during test."
++              exit 0
++          else
++              echo "The following un-ignored files were created during the test:"
++              echo "$OUT"
++              exit 0  # TODO: change to 1 to fail tests.
++          fi
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
+diff --git a/playbooks/legacy/ceilometer-tox-py27-postgresql/post.yaml b/playbooks/legacy/ceilometer-tox-py27-postgresql/post.yaml
+new file mode 100644
+index 0000000..68fbdf8
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-tox-py27-postgresql/post.yaml
+@@ -0,0 +1,67 @@
++- hosts: primary
++  tasks:
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*nose_results.html
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testr_results.html.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.testrepository/tmp*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testrepository.subunit.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}/tox'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.tox/*/log/*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
+diff --git a/playbooks/legacy/ceilometer-tox-py27-postgresql/run.yaml b/playbooks/legacy/ceilometer-tox-py27-postgresql/run.yaml
+new file mode 100644
+index 0000000..69b20fd
+--- /dev/null
++++ b/playbooks/legacy/ceilometer-tox-py27-postgresql/run.yaml
+@@ -0,0 +1,86 @@
++- hosts: all
++  name: Autoconverted job legacy-ceilometer-tox-py27-postgresql from old job gate-ceilometer-tox-py27-postgresql-ubuntu-xenial
++  tasks:
++
++    - name: Ensure legacy workspace directory
++      file:
++        path: '{{ ansible_user_dir }}/workspace'
++        state: directory
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          CLONEMAP=`mktemp`
++          REQS_DIR=`mktemp -d`
++          function cleanup {
++              mkdir -p $WORKSPACE
++              rm -rf $CLONEMAP $REQS_DIR
++          }
++          trap cleanup EXIT
++          cat > $CLONEMAP << EOF
++          clonemap:
++            - name: $ZUUL_PROJECT
++              dest: .
++          EOF
++          # zuul cloner works poorly if there are 2 names that are the
++          # same in here.
++          if [[ "$ZUUL_PROJECT" != "openstack/requirements" ]]; then
++          cat >> $CLONEMAP << EOF
++            - name: openstack/requirements
++              dest: $REQS_DIR
++          EOF
++          fi
++          /usr/zuul-env/bin/zuul-cloner -m $CLONEMAP --cache-dir /opt/git \
++              git://git.openstack.org $ZUUL_PROJECT openstack/requirements
++          # REQS_DIR is not set for openstack/requirements and there is also
++          # no need to copy in this case.
++          if [[ "$ZUUL_PROJECT" != "openstack/requirements" ]]; then
++              cp $REQS_DIR/upper-constraints.txt ./
++          fi
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: /usr/local/jenkins/slave_scripts/install-distro-packages.sh
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          if [ -x tools/test-setup.sh ] ; then
++            tools/test-setup.sh
++          fi
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          set -x
++          sudo rm -f /etc/sudoers.d/zuul
++          # Prove that general sudo access is actually revoked
++          ! sudo -n true
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: /usr/local/jenkins/slave_scripts/run-tox.sh py27-postgresql
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          OUT=`git ls-files --other --exclude-standard --directory`
++          if [ -z "$OUT" ]; then
++              echo "No extra files created during test."
++              exit 0
++          else
++              echo "The following un-ignored files were created during the test:"
++              echo "$OUT"
++              exit 0  # TODO: change to 1 to fail tests.
++          fi
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
+diff --git a/playbooks/legacy/grenade-dsvm-ceilometer/post.yaml b/playbooks/legacy/grenade-dsvm-ceilometer/post.yaml
+new file mode 100644
+index 0000000..e07f551
+--- /dev/null
++++ b/playbooks/legacy/grenade-dsvm-ceilometer/post.yaml
+@@ -0,0 +1,15 @@
++- hosts: primary
++  tasks:
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/logs/**
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
+diff --git a/playbooks/legacy/grenade-dsvm-ceilometer/run.yaml b/playbooks/legacy/grenade-dsvm-ceilometer/run.yaml
+new file mode 100644
+index 0000000..e513564
+--- /dev/null
++++ b/playbooks/legacy/grenade-dsvm-ceilometer/run.yaml
+@@ -0,0 +1,43 @@
++- hosts: all
++  name: Autoconverted job legacy-grenade-dsvm-ceilometer from old job gate-grenade-dsvm-ceilometer-ubuntu-xenial
++  tasks:
++
++    - name: Ensure legacy workspace directory
++      file:
++        path: '{{ ansible_user_dir }}/workspace'
++        state: directory
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          cat > clonemap.yaml << EOF
++          clonemap:
++            - name: openstack-infra/devstack-gate
++              dest: devstack-gate
++          EOF
++          /usr/zuul-env/bin/zuul-cloner -m clonemap.yaml --cache-dir /opt/git \
++              git://git.openstack.org \
++              openstack-infra/devstack-gate
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          export PROJECTS="openstack-dev/grenade $PROJECTS"
++          export PYTHONUNBUFFERED=true
++          export DEVSTACK_GATE_TEMPEST=1
++          export DEVSTACK_GATE_GRENADE=pullup
++          export BRANCH_OVERRIDE=default
++          if [ "$BRANCH_OVERRIDE" != "default" ] ; then
++              export OVERRIDE_ZUUL_BRANCH=$BRANCH_OVERRIDE
++          fi
++          export GRENADE_PLUGINRC="enable_grenade_plugin ceilometer https://git.openstack.org/openstack/ceilometer"
++          cp devstack-gate/devstack-vm-gate-wrap.sh ./safe-devstack-vm-gate-wrap.sh
++          ./safe-devstack-vm-gate-wrap.sh
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
+diff --git a/playbooks/legacy/telemetry-dsvm-integration-ceilometer/post.yaml b/playbooks/legacy/telemetry-dsvm-integration-ceilometer/post.yaml
+new file mode 100644
+index 0000000..dac8753
+--- /dev/null
++++ b/playbooks/legacy/telemetry-dsvm-integration-ceilometer/post.yaml
+@@ -0,0 +1,80 @@
++- hosts: primary
++  tasks:
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*nose_results.html
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testr_results.html.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.testrepository/tmp*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=**/*testrepository.subunit.gz
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}/tox'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/.tox/*/log/*
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
++
++    - name: Copy files from {{ ansible_user_dir }}/workspace/ on node
++      synchronize:
++        src: '{{ ansible_user_dir }}/workspace/'
++        dest: '{{ zuul.executor.log_root }}'
++        mode: pull
++        copy_links: true
++        verify_host: true
++        rsync_opts:
++          - --include=/logs/**
++          - --include=*/
++          - --exclude=*
++          - --prune-empty-dirs
+diff --git a/playbooks/legacy/telemetry-dsvm-integration-ceilometer/run.yaml b/playbooks/legacy/telemetry-dsvm-integration-ceilometer/run.yaml
+new file mode 100644
+index 0000000..41afd10
+--- /dev/null
++++ b/playbooks/legacy/telemetry-dsvm-integration-ceilometer/run.yaml
+@@ -0,0 +1,56 @@
++- hosts: all
++  name: Autoconverted job legacy-telemetry-dsvm-integration-ceilometer from old job
++    gate-telemetry-dsvm-integration-ceilometer-ubuntu-xenial
++  tasks:
++
++    - name: Ensure legacy workspace directory
++      file:
++        path: '{{ ansible_user_dir }}/workspace'
++        state: directory
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          cat > clonemap.yaml << EOF
++          clonemap:
++            - name: openstack-infra/devstack-gate
++              dest: devstack-gate
++          EOF
++          /usr/zuul-env/bin/zuul-cloner -m clonemap.yaml --cache-dir /opt/git \
++              git://git.openstack.org \
++              openstack-infra/devstack-gate
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
++
++    - shell:
++        cmd: |
++          set -e
++          set -x
++          export PYTHONUNBUFFERED=true
++          export DEVSTACK_GATE_HEAT=1
++          export DEVSTACK_GATE_NEUTRON=1
++          export DEVSTACK_GATE_TEMPEST=1
++          export DEVSTACK_GATE_EXERCISES=0
++          export DEVSTACK_GATE_INSTALL_TESTONLY=1
++          export DEVSTACK_GATE_TEMPEST_NOTESTS=1
++          export PROJECTS="openstack/ceilometer openstack/aodh openstack/panko"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"enable_plugin panko git://git.openstack.org/openstack/panko"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"enable_plugin ceilometer git://git.openstack.org/openstack/ceilometer"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"enable_plugin aodh git://git.openstack.org/openstack/aodh"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"enable_plugin heat git://git.openstack.org/openstack/heat"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"CEILOMETER_BACKEND=gnocchi"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"GNOCCHI_ARCHIVE_POLICY=high"
++          export DEVSTACK_LOCAL_CONFIG+=$'\n'"CEILOMETER_PIPELINE_INTERVAL=15"
++          export DEVSTACK_PROJECT_FROM_GIT=$ZUUL_SHORT_PROJECT_NAME
++          function post_test_hook {
++              cd /opt/stack/new/ceilometer/ceilometer/tests/integration/hooks/
++              ./post_test_hook.sh
++          }
++          export -f post_test_hook
++          cp devstack-gate/devstack-vm-gate-wrap.sh ./safe-devstack-vm-gate-wrap.sh
++          ./safe-devstack-vm-gate-wrap.sh
++        executable: /bin/bash
++        chdir: '{{ ansible_user_dir }}/workspace'
++      environment: '{{ zuul | zuul_legacy_vars }}'
+-- 
+2.7.4
+

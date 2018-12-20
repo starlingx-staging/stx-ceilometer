@@ -1,0 +1,334 @@
+From 1a46672252fad34ef16b6a55749d342457f08abc Mon Sep 17 00:00:00 2001
+From: Angie Wang <Angie.Wang@windriver.com>
+Date: Thu, 12 Jan 2017 15:36:29 -0500
+Subject: [PATCH 14/91] US103891: Pike Rebase. vcpu feature for ceilometer
+
+This squash includes the commits:
+
+1. Rebase. Mitaka. Port vcpu feature
+   commit: c58fb1190eb
+2. Rebase. Mitaka. Port tox vcpu number value
+   commit: fb3068c333d
+3. Rebase. Mitaka. Port fix vcpu_util meters for ceilometer.
+   commit: 71936594419
+---
+ ceilometer/compute/pollsters/instance_stats.py       |  3 ++-
+ ceilometer/compute/virt/hyperv/inspector.py          | 10 +++++++++-
+ ceilometer/compute/virt/inspector.py                 |  9 ++++++++-
+ ceilometer/compute/virt/libvirt/inspector.py         |  9 +++++++++
+ ceilometer/pipeline/data/pipeline.yaml               | 17 ++++++++++++-----
+ ceilometer/tests/unit/compute/pollsters/test_cpu.py  | 19 +++++++++++++++----
+ .../unit/compute/virt/libvirt/test_inspector.py      | 12 ++++++++++++
+ ceilometer/tests/unit/test_decoupled_pipeline.py     | 20 +++++++++++++-------
+ etc/ceilometer/controller.yaml                       |  6 ------
+ 9 files changed, 80 insertions(+), 25 deletions(-)
+
+diff --git a/ceilometer/compute/pollsters/instance_stats.py b/ceilometer/compute/pollsters/instance_stats.py
+index 48aee0b..5c0591a 100644
+--- a/ceilometer/compute/pollsters/instance_stats.py
++++ b/ceilometer/compute/pollsters/instance_stats.py
+@@ -30,7 +30,8 @@ class CPUPollster(InstanceStatsPollster):
+ 
+     @staticmethod
+     def get_additional_metadata(instance, c_data):
+-        return {'cpu_number': c_data.cpu_number}
++        return {'cpu_number': c_data.cpu_number,
++                'vcpu_number': c_data.vcpu_number}
+ 
+ 
+ class CPUUtilPollster(InstanceStatsPollster):
+diff --git a/ceilometer/compute/virt/hyperv/inspector.py b/ceilometer/compute/virt/hyperv/inspector.py
+index 8771e8d..8ecfd3c 100644
+--- a/ceilometer/compute/virt/hyperv/inspector.py
++++ b/ceilometer/compute/virt/hyperv/inspector.py
+@@ -12,6 +12,13 @@
+ # License for the specific language governing permissions and limitations
+ # under the License.
+ """Implementation of Inspector abstraction for Hyper-V"""
++#
++# Copyright (c) 2014-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ 
+ import collections
+ import functools
+@@ -103,7 +110,8 @@ class HyperVInspector(virt_inspector.Inspector):
+         return virt_inspector.InstanceStats(
+             cpu_number=cpu_count,
+             cpu_time=cpu_time,
+-            memory_usage=memory_usage)
++            memory_usage=memory_usage,
++            vcpu_number=cpu_count)
+ 
+     def inspect_vnics(self, instance, duration):
+         instance_name = util.instance_name(instance)
+diff --git a/ceilometer/compute/virt/inspector.py b/ceilometer/compute/virt/inspector.py
+index 7f6f517..6ef8899 100644
+--- a/ceilometer/compute/virt/inspector.py
++++ b/ceilometer/compute/virt/inspector.py
+@@ -13,7 +13,13 @@
+ # License for the specific language governing permissions and limitations
+ # under the License.
+ """Inspector abstraction for read-only access to hypervisors."""
+-
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ import collections
+ 
+ from oslo_config import cfg
+@@ -40,6 +46,7 @@ LOG = log.getLogger(__name__)
+ class InstanceStats(object):
+     fields = [
+         'cpu_number',              # number: number of CPUs
++        'vcpu_number',             # number: number of VCPUs
+         'cpu_time',                # time: cumulative CPU time
+         'cpu_util',                # util: CPU utilization in percentage
+         'cpu_l3_cache_usage',      # cachesize: Amount of CPU L3 cache used
+diff --git a/ceilometer/compute/virt/libvirt/inspector.py b/ceilometer/compute/virt/libvirt/inspector.py
+index 3c2d302..0bde7f8 100644
+--- a/ceilometer/compute/virt/libvirt/inspector.py
++++ b/ceilometer/compute/virt/libvirt/inspector.py
+@@ -173,6 +173,14 @@ class LibvirtInspector(virt_inspector.Inspector):
+             memory_swap_in = memory_stats['swap_in'] / units.Ki
+             memory_swap_out = memory_stats['swap_out'] / units.Ki
+ 
++        # WRS - find out real number of active vcpus after VM scale up/down
++        # by counting number of unique host CPUs that have active vCPUs:
++        # Assumption: each vCPU can only map to one host CPU.
++        # e.g. [(True,False,False),(False,True,False)(True,False,False)] should
++        # return 2 active vcpus since vcpu2 shares a mapping with vcpu0
++        (__, cpumap) = domain.vcpus()
++        num_vcpu = len(set(cpumap))
++
+         # TODO(sileht): stats also have the disk/vnic info
+         # we could use that instead of the old method for Queen
+         stats = self.connection.domainListGetStats([domain], 0)[0][1]
+@@ -199,6 +207,7 @@ class LibvirtInspector(virt_inspector.Inspector):
+ 
+         return virt_inspector.InstanceStats(
+             cpu_number=stats.get('vcpu.current'),
++            vcpu_number=num_vcpu,
+             cpu_time=cpu_time,
+             memory_usage=memory_used,
+             memory_resident=memory_resident,
+diff --git a/ceilometer/pipeline/data/pipeline.yaml b/ceilometer/pipeline/data/pipeline.yaml
+index fc0ba63..16db5ad 100644
+--- a/ceilometer/pipeline/data/pipeline.yaml
++++ b/ceilometer/pipeline/data/pipeline.yaml
+@@ -9,12 +9,8 @@ sources:
+           - "cpu"
+       sinks:
+           - cpu_sink
+-    - name: vcpu_source
+-      interval: 30
+-      meters:
+-          - "vcpu"
+-      sinks:
+           - cpu_delta_sink
++          - vcpu_sink
+     - name: disk_source
+       meters:
+           - "disk.read.bytes"
+@@ -73,6 +69,17 @@ sinks:
+                 growth_only: True
+       publishers:
+           - gnocchi://
++    - name: vcpu_sink
++      transformers:
++          - name: "rate_of_change"
++            parameters:
++                target:
++                    name: "vcpu_util"
++                    unit: "%"
++                    type: "gauge"
++                    scale: "100.0 / (10**9 * (resource_metadata.vcpu_number or 1))"
++      publishers:
++          - gnocchi://
+     - name: disk_sink
+       transformers:
+           - name: "rate_of_change"
+diff --git a/ceilometer/tests/unit/compute/pollsters/test_cpu.py b/ceilometer/tests/unit/compute/pollsters/test_cpu.py
+index d40e288..79180e5 100644
+--- a/ceilometer/tests/unit/compute/pollsters/test_cpu.py
++++ b/ceilometer/tests/unit/compute/pollsters/test_cpu.py
+@@ -13,7 +13,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
+-
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ import time
+ 
+ import mock
+@@ -29,10 +35,13 @@ class TestCPUPollster(base.TestPollsterBase):
+     @mock.patch('ceilometer.pipeline.setup_pipeline', mock.MagicMock())
+     def test_get_samples(self):
+         self._mock_inspect_instance(
+-            virt_inspector.InstanceStats(cpu_time=1 * (10 ** 6), cpu_number=2),
+-            virt_inspector.InstanceStats(cpu_time=3 * (10 ** 6), cpu_number=2),
++            virt_inspector.InstanceStats(cpu_time=1 * (10 ** 6), cpu_number=2,
++                                         vcpu_number=2),
++            virt_inspector.InstanceStats(cpu_time=3 * (10 ** 6), cpu_number=2,
++                                         vcpu_number=2),
+             # cpu_time resets on instance restart
+-            virt_inspector.InstanceStats(cpu_time=2 * (10 ** 6), cpu_number=2),
++            virt_inspector.InstanceStats(cpu_time=2 * (10 ** 6), cpu_number=2,
++                                         vcpu_number=2),
+         )
+ 
+         mgr = manager.AgentManager(0, self.CONF)
+@@ -45,6 +54,8 @@ class TestCPUPollster(base.TestPollsterBase):
+             self.assertEqual(set(['cpu']), set([s.name for s in samples]))
+             self.assertEqual(expected_time, samples[0].volume)
+             self.assertEqual(2, samples[0].resource_metadata.get('cpu_number'))
++            self.assertEqual(2, samples[0].resource_metadata.
++                             get('vcpu_number'))
+             # ensure elapsed time between polling cycles is non-zero
+             time.sleep(0.001)
+ 
+diff --git a/ceilometer/tests/unit/compute/virt/libvirt/test_inspector.py b/ceilometer/tests/unit/compute/virt/libvirt/test_inspector.py
+index de8e2b5..bb36ef1 100644
+--- a/ceilometer/tests/unit/compute/virt/libvirt/test_inspector.py
++++ b/ceilometer/tests/unit/compute/virt/libvirt/test_inspector.py
+@@ -58,6 +58,9 @@ class TestLibvirtInspection(base.BaseTestCase):
+                                            'rss': 30000,
+                                            'swap_in': 5120,
+                                            'swap_out': 8192}
++        domain.vcpus.return_value = (None, [(True, False, False),
++                                            (False, True, False),
++                                            (True, False, False)])
+         conn = mock.Mock()
+         conn.lookupByUUIDString.return_value = domain
+         conn.domainListGetStats.return_value = [({}, {
+@@ -99,6 +102,9 @@ class TestLibvirtInspection(base.BaseTestCase):
+         domain.memoryStats.return_value = {'available': 51200,
+                                            'unused': 25600,
+                                            'rss': 30000}
++        domain.vcpus.return_value = (None, [(True, False, False),
++                                            (False, True, False),
++                                            (True, False, False)])
+         conn = mock.Mock()
+         conn.lookupByUUIDString.return_value = domain
+         conn.domainListGetStats.return_value = [({}, {
+@@ -413,6 +419,9 @@ class TestLibvirtInspection(base.BaseTestCase):
+         domain = mock.Mock()
+         domain.info.return_value = (0, 0, 51200, 2, 999999)
+         domain.memoryStats.return_value = {}
++        domain.vcpus.return_value = (None, [(True, False, False),
++                                            (False, True, False),
++                                            (True, False, False)])
+         conn = mock.Mock()
+         conn.domainListGetStats.return_value = [({}, {})]
+         conn.lookupByUUIDString.return_value = domain
+@@ -431,6 +440,9 @@ class TestLibvirtInspection(base.BaseTestCase):
+         domain.memoryStats.return_value = {'rss': 0,
+                                            'available': 51200,
+                                            'unused': 25600}
++        domain.vcpus.return_value = (None, [(True, False, False),
++                                            (False, True, False),
++                                            (True, False, False)])
+         conn = mock.Mock()
+         conn.domainListGetStats.return_value = [({}, {})]
+         conn.lookupByUUIDString.return_value = domain
+diff --git a/ceilometer/tests/unit/test_decoupled_pipeline.py b/ceilometer/tests/unit/test_decoupled_pipeline.py
+index a8db848..21285b4 100644
+--- a/ceilometer/tests/unit/test_decoupled_pipeline.py
++++ b/ceilometer/tests/unit/test_decoupled_pipeline.py
+@@ -12,7 +12,13 @@
+ # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ # License for the specific language governing permissions and limitations
+ # under the License.
+-
++#
++# Copyright (c) 2013-2015 Wind River Systems, Inc.
++#
++# The right to copy, distribute, modify, or otherwise make use
++# of this software may be licensed only pursuant to the terms
++# of an applicable Wind River license agreement.
++#
+ import yaml
+ 
+ from ceilometer import pipeline
+@@ -218,42 +224,42 @@ class TestDecoupledPipeline(pipeline_base.BasePipelineTestCase):
+     def test_rate_of_change_boilerplate_disk_read_cfg(self):
+         meters = ('disk.read.bytes', 'disk.read.requests')
+         units = ('B', 'request')
+-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(3,
++        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
+                                                                  meters,
+                                                                  units)
+ 
+     def test_rate_of_change_boilerplate_disk_write_cfg(self):
+         meters = ('disk.write.bytes', 'disk.write.requests')
+         units = ('B', 'request')
+-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(3,
++        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
+                                                                  meters,
+                                                                  units)
+ 
+     def test_rate_of_change_boilerplate_network_incoming_cfg(self):
+         meters = ('network.incoming.bytes', 'network.incoming.packets')
+         units = ('B', 'packet')
+-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
++        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(5,
+                                                                  meters,
+                                                                  units)
+ 
+     def test_rate_of_change_boilerplate_per_disk_device_read_cfg(self):
+         meters = ('disk.device.read.bytes', 'disk.device.read.requests')
+         units = ('B', 'request')
+-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(3,
++        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
+                                                                  meters,
+                                                                  units)
+ 
+     def test_rate_of_change_boilerplate_per_disk_device_write_cfg(self):
+         meters = ('disk.device.write.bytes', 'disk.device.write.requests')
+         units = ('B', 'request')
+-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(3,
++        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
+                                                                  meters,
+                                                                  units)
+ 
+     def test_rate_of_change_boilerplate_network_outgoing_cfg(self):
+         meters = ('network.outgoing.bytes', 'network.outgoing.packets')
+         units = ('B', 'packet')
+-        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(4,
++        self._do_test_rate_of_change_in_boilerplate_pipeline_cfg(5,
+                                                                  meters,
+                                                                  units)
+ 
+diff --git a/etc/ceilometer/controller.yaml b/etc/ceilometer/controller.yaml
+index d386c82..1c9351c 100644
+--- a/etc/ceilometer/controller.yaml
++++ b/etc/ceilometer/controller.yaml
+@@ -15,12 +15,6 @@ sources:
+           - "cpu"
+       sinks:
+           - cpu_sink
+-          - csv_sink
+-    - name: vcpu_source
+-      interval: 30
+-      meters:
+-          - "vcpu"
+-      sinks:
+           - vcpu_sink
+           - csv_sink
+     - name: disk_source
+-- 
+2.7.4
+

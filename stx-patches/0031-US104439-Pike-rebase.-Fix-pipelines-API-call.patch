@@ -1,0 +1,143 @@
+From 1a487d28e7f9f5e212e9283950806c34916cd3fc Mon Sep 17 00:00:00 2001
+From: Angie Wang <angie.Wang@windriver.com>
+Date: Tue, 14 Nov 2017 15:19:49 -0500
+Subject: [PATCH 31/91] US104439: Pike rebase. Fix pipelines API call
+
+Remove usage of cfg.CONF
+---
+ ceilometer/api/controllers/v2/pipelines.py | 40 ++++++++++++++++++------------
+ 1 file changed, 24 insertions(+), 16 deletions(-)
+
+diff --git a/ceilometer/api/controllers/v2/pipelines.py b/ceilometer/api/controllers/v2/pipelines.py
+index fff3c1f..fb9b376 100644
+--- a/ceilometer/api/controllers/v2/pipelines.py
++++ b/ceilometer/api/controllers/v2/pipelines.py
+@@ -24,7 +24,6 @@ from ceilometer.i18n import _
+ from ceilometer import pipeline as pipeline_t
+ from ceilometer.publisher import csvfile
+ import os
+-from oslo_config import cfg
+ from oslo_log import log
+ import pecan
+ from pecan import rest
+@@ -38,6 +37,7 @@ import yaml
+ LOG = log.getLogger(__name__)
+ 
+ P_TYPE = {
++    'name': 'sample',
+     'pipeline': pipeline_t.SamplePipeline,
+     'source': pipeline_t.SampleSource,
+     'sink': pipeline_t.SampleSink
+@@ -79,10 +79,11 @@ class Pipeline(base.Base):
+                 pecan.response.translatable_error = error
+                 raise wsme.exc.ClientSideError(unicode(error))
+ 
+-        if cfg.CONF.csv_location_strict:
++        if pecan.request.cfg.publisher_csvfile.csv_location_strict:
+             # Use abspath to expand sneaky things like ../ in the path
+             loc_val = os.path.abspath(getattr(pipeline, 'location'))
+-            if not loc_val.startswith(cfg.CONF.csv_location):
++            if not loc_val.startswith(pecan.request.cfg.
++                                      publisher_csvfile.csv_location):
+                 fmt = _("%s violates the location constraint in config")
+                 error = fmt % loc_val
+                 pecan.response.translatable_error = error
+@@ -131,43 +132,48 @@ class PipelinesController(rest.RestController):
+                     pipeline_cfg[p.sink.name] = self.format_as_dict(p.sink, pb)
+         return pipeline_cfg.values()
+ 
+-    def get_pipelines_from_cfg(self, cfg):
++    def get_pipelines_from_cfg(self, conf, cfg):
+         # This code is based on the constructor in pipeline.py
+         transformer_manager = extension.ExtensionManager(
+             'ceilometer.transformer')
++        publisher_manager = pipeline_t.PublisherManager(
++            conf, P_TYPE['name'])
+         new_pipelines = []
+         if 'sources' in cfg or 'sinks' in cfg:
+             if not ('sources' in cfg and 'sinks' in cfg):
+                 raise pipeline_t.PipelineException(
+                     "Both sources & sinks are required", cfg)
+             sources = [P_TYPE['source'](s) for s in cfg.get('sources', [])]
+-            sinks = dict((s['name'], P_TYPE['sink'](s, transformer_manager))
++            sinks = dict((s['name'], P_TYPE['sink'](conf, s,
++                         transformer_manager, publisher_manager))
+                          for s in cfg.get('sinks', []))
+             for source in sources:
+                 source.check_sinks(sinks)
+                 for target in source.sinks:
+                     new_pipelines.append(
+-                        P_TYPE['pipeline'](source, sinks[target]))
++                        P_TYPE['pipeline'](conf, source, sinks[target]))
+         else:
+             for pipedef in cfg:
+                 source = P_TYPE['source'](pipedef)
+-                sink = P_TYPE['sink'](pipedef, transformer_manager)
+-                new_pipelines.append(P_TYPE['pipeline'](source, sink))
++                sink = P_TYPE['sink'](conf, pipedef,
++                                      transformer_manager, publisher_manager)
++                new_pipelines.append(P_TYPE['pipeline'](conf, source, sink))
+         return new_pipelines
+ 
+     def get_pipelines_from_yaml(self):
+         pipeline_cfg = {}
+ 
+         yaml_cfg = []
+-        cfg_file = cfg.CONF.pipeline_cfg_file
++        conf = pecan.request.cfg
++        cfg_file = conf.pipeline_cfg_file
+         if not os.path.exists(cfg_file):
+-            cfg_file = cfg.CONF.find_file(cfg_file)
++            cfg_file = conf.find_file(cfg_file)
+         with open(cfg_file) as fap:
+             filedata = fap.read()
+             yaml_cfg = yaml.safe_load(filedata)
+ 
+         # Parse and convert to Pipeline objects
+-        pipelines = self.get_pipelines_from_cfg(yaml_cfg)
++        pipelines = self.get_pipelines_from_cfg(conf, yaml_cfg)
+         for p in pipelines:
+             for pb in p.sink.publishers:
+                 if isinstance(pb, csvfile.CSVFilePublisher):
+@@ -219,15 +225,16 @@ class PipelinesController(rest.RestController):
+ 
+         # Get the matching csv publisher for the pipeline.
+         yaml_cfg = []
+-        cfg_file = cfg.CONF.pipeline_cfg_file
++        conf = pecan.request.cfg
++        cfg_file = conf.pipeline_cfg_file
+         if not os.path.exists(cfg_file):
+-            cfg_file = cfg.CONF.find_file(cfg_file)
++            cfg_file = conf.find_file(cfg_file)
+         with open(cfg_file) as fap:
+             filedata = fap.read()
+             yaml_cfg = yaml.safe_load(filedata)
+ 
+         # Parse and convert to Pipeline objects
+-        pipelines = self.get_pipelines_from_cfg(yaml_cfg)
++        pipelines = self.get_pipelines_from_cfg(conf, yaml_cfg)
+ 
+         csv = None
+         for p in pipelines:
+@@ -260,7 +267,7 @@ class PipelinesController(rest.RestController):
+         # Re-process in-memory version of yaml to prove it is still good
+         # Should show throw an exception if syntax became invalid
+ 
+-        pipelines = self.get_pipelines_from_cfg(yaml_cfg)
++        pipelines = self.get_pipelines_from_cfg(conf, yaml_cfg)
+ 
+         # Must be outputted as a single yaml (ie: use dump ,not dump_all)
+         stream = file(cfg_file, 'w')
+@@ -277,7 +284,8 @@ class PipelinesController(rest.RestController):
+             p1 = subprocess.Popen(['pgrep', '-f', h], stdout=subprocess.PIPE)
+             subprocess.Popen(['xargs', '--no-run-if-empty', 'kill', '-HUP'],
+                              stdin=p1.stdout, stdout=subprocess.PIPE)
+-        pecan.request.pipeline_manager = pipeline_t.setup_pipeline()
++        pecan.request.pipeline_manager = \
++            pipeline_t.setup_pipeline(pecan.request.cfg)
+         # Re-parse and return value from file
+         # This protects us if the file was not stored properly
+         pipelines = self.get_pipelines()
+-- 
+2.7.4
+

@@ -1,3 +1,4 @@
+---
 sources:
     - name: meter_source
       meters:
@@ -10,7 +11,6 @@ sources:
       sinks:
           - cpu_sink
           - cpu_delta_sink
-          - vcpu_sink
     - name: disk_source
       meters:
           - "disk.read.bytes"
@@ -35,7 +35,7 @@ sinks:
     - name: meter_sink
       transformers:
       publishers:
-          - notifier://
+          - gnocchi://
     - name: cpu_sink
       transformers:
           - name: "rate_of_change"
@@ -47,7 +47,7 @@ sinks:
                     max: 100
                     scale: "100.0 / (10**9 * (resource_metadata.cpu_number or 1))"
       publishers:
-          - notifier://
+          - gnocchi://
     - name: cpu_delta_sink
       transformers:
           - name: "delta"
@@ -56,19 +56,7 @@ sinks:
                     name: "cpu.delta"
                 growth_only: True
       publishers:
-          - notifier://
-    - name: vcpu_sink
-      transformers:
-          - name: "rate_of_change"
-            parameters:
-                target:
-                    name: "vcpu_util"
-                    unit: "%"
-                    type: "gauge"
-                    max: 100
-                    scale: "100.0 / (10**9 * (resource_metadata.vcpu_number or 1))"
-      publishers:
-          - notifier://
+          - gnocchi://
     - name: disk_sink
       transformers:
           - name: "rate_of_change"
@@ -83,7 +71,7 @@ sinks:
                         unit: "\\1/s"
                     type: "gauge"
       publishers:
-          - notifier://
+          - gnocchi://
     - name: network_sink
       transformers:
           - name: "rate_of_change"
@@ -98,4 +86,4 @@ sinks:
                         unit: "\\1/s"
                     type: "gauge"
       publishers:
-          - notifier://
+          - gnocchi://
